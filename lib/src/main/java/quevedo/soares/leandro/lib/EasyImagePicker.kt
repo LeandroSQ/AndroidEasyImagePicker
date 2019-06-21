@@ -394,7 +394,7 @@ object EasyImagePicker {
 
 					// Check for the "output" extra
 					response.hasExtra(MediaStore.EXTRA_OUTPUT) -> {
-						val image = response.extras!!.get(MediaStore.EXTRA_OUTPUT) as Bitmap
+						val image = response.extras!!.get(MediaStore.EXTRA_OUTPUT) as? Bitmap
 
 						this.successListener?.invoke(image)
 					}
