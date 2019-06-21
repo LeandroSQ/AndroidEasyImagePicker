@@ -9,6 +9,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -385,7 +387,7 @@ object EasyImagePicker {
 
 					// Check for the URI "intent-data" behaviour
 					response.data != null -> {
-						val result = this.loadBitmapFromUri(response.data)
+						val result = this.loadBitmapFromUri(response.data!!)
 
 						this.successListener?.invoke(result)
 					}
@@ -402,7 +404,7 @@ object EasyImagePicker {
 					}
 				}
 			} else if (this.temporaryFile != null) {
-				val result = this.loadBitmapFromUri(this.temporaryFile)
+				val result = this.loadBitmapFromUri(this.temporaryFile!!)
 
 				this.successListener?.invoke(result)
 			} else {
@@ -410,15 +412,42 @@ object EasyImagePicker {
 			}
 		}
 
-		private fun loadBitmapFromUri(uri: Uri?): Bitmap? {
-			val bitmap = MediaStore.Images.Media.getBitmap(this.context.contentResolver, uri)
+		private fun loadBitmapFromUri(uri: Uri): Bitmap? {
+			// Loads the bitmap from the URI
+			var rawBitmap = MediaStore.Images.Media.getBitmap(this.context.contentResolver, uri)
+			if (rawBitmap == null) rawBitmap = BitmapFactory.decodeStream(this.context.contentResolver.openInputStream(uri))
 
-			return if (bitmap != null) {
-				bitmap
-			} else {
-				val inputStream = this.context.contentResolver.openInputStream(uri!!)
+			return this.handleBitmapRotation(uri, rawBitmap)
+		}
 
-				BitmapFactory.decodeStream(inputStream)
+		private fun handleBitmapRotation(uri: Uri, rawBitmap: Bitmap): Bitmap {
+			try {
+				// This inner function only rotates an image at a given angle
+				fun rotateBitmap(source: Bitmap, angle: Float): Bitmap {
+					val matrix = Matrix()
+					matrix.postRotate(angle)
+					return Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
+				}
+
+				// Builds an exif interface according to device SDK
+				val exifInterface =
+						if (Build.VERSION.SDK_INT > 23) {
+							ExifInterface(context.contentResolver.openInputStream(uri))
+						} else {
+							ExifInterface(uri.path)
+						}
+
+				return when (exifInterface.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_UNDEFINED)) {
+					ExifInterface.ORIENTATION_ROTATE_90 -> rotateBitmap(rawBitmap, 90f)
+					ExifInterface.ORIENTATION_ROTATE_180 -> rotateBitmap(rawBitmap, 180f)
+					ExifInterface.ORIENTATION_ROTATE_270 -> rotateBitmap(rawBitmap, 270f)
+					else -> rawBitmap
+				}
+			} catch (e: Exception) {
+				// In case of any error, ignore it and return the raw bitmap
+				e.printStackTrace()
+
+				return rawBitmap
 			}
 		}
 
@@ -522,7 +551,6 @@ object EasyImagePicker {
 		}
 
 		//</editor-fold>
-
 
 	}
 
