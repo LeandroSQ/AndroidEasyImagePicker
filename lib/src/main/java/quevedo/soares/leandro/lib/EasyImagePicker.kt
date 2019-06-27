@@ -4,9 +4,11 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ComponentName
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.database.Cursor
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
@@ -16,6 +18,7 @@ import android.os.Build
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.support.v4.app.ActivityCompat
 import android.support.v4.app.Fragment
@@ -396,7 +399,16 @@ object EasyImagePicker {
 					response.hasExtra(MediaStore.EXTRA_OUTPUT) -> {
 						val image = response.extras!!.get(MediaStore.EXTRA_OUTPUT) as? Bitmap
 
-						this.successListener?.invoke(image)
+						// Check if an image was provided
+						if (image == null) {
+							// Otherwise, check if a file path was provided
+							(response.extras!!.get(MediaStore.EXTRA_OUTPUT) as? Uri)?.let { uri ->
+								this.temporaryFile = uri
+								this.successListener?.invoke(this.loadBitmapFromUri(uri))
+							}
+						} else {
+							this.successListener?.invoke(image)
+						}
 					}
 
 					else -> {
@@ -412,12 +424,20 @@ object EasyImagePicker {
 			}
 		}
 
-		private fun loadBitmapFromUri(uri: Uri): Bitmap? {
+		private fun loadBitmapFromUri(input: Uri): Bitmap? {
 			// Loads the bitmap from the URI
+			val uri = this.extractFilePathFromExternalStorage(input)
 			var rawBitmap = MediaStore.Images.Media.getBitmap(this.context.contentResolver, uri)
 			if (rawBitmap == null) rawBitmap = BitmapFactory.decodeStream(this.context.contentResolver.openInputStream(uri))
 
-			return this.handleBitmapRotation(uri, rawBitmap)
+			return if (rawBitmap != null)
+				this.handleBitmapRotation(uri, rawBitmap)
+			else
+				null
+		}
+
+		private fun extractFilePathFromExternalStorage(uri: Uri): Uri {
+			return uri
 		}
 
 		private fun handleBitmapRotation(uri: Uri, rawBitmap: Bitmap): Bitmap {
@@ -461,10 +481,38 @@ object EasyImagePicker {
 			return File.createTempFile(filename, ".jpg", storagePath)
 		}
 
+		private fun setupCroppingIntent (intent: Intent) {
+			// Inline cropping option
+			if (this.optionCrop) {
+				intent.putExtra("crop", "true")
+
+				when (this.optionCropType) {
+					EasyImagePicker.CropImageType.FREE_CROPPING -> {
+						intent.putExtra("scale", "true")
+					}
+
+					EasyImagePicker.CropImageType.ASPECT_RATIO -> {
+						intent.putExtra("aspectX", this.cropAspectRatioHorizontal)
+						intent.putExtra("aspectY", this.cropAspectRatioVertical)
+					}
+
+					EasyImagePicker.CropImageType.FIXED_SIZE -> {
+						intent.putExtra("outputX", this.cropSizeWidth)
+						intent.putExtra("outputY", this.cropSizeHeight)
+					}
+				}
+
+				intent.putExtra("return-data", true)
+			}
+		}
+
 		private fun createCameraCaptureIntent(): Intent {
 			when {
 				Build.VERSION.SDK_INT <= Build.VERSION_CODES.M -> {
 					val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+
+					this.setupCroppingIntent(intent)
+
 					return intent
 				}
 				else -> {
@@ -474,6 +522,8 @@ object EasyImagePicker {
 					// Create an intent for picking the image
 					val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
 					intent.putExtra(MediaStore.EXTRA_OUTPUT, this.temporaryFile)
+
+					this.setupCroppingIntent(intent)
 
 					// Return it
 					return intent
@@ -491,26 +541,7 @@ object EasyImagePicker {
 				intent.putExtra("return-data", true)
 			}
 
-			// Inline cropping option
-			if (this.optionCrop) {
-				intent.putExtra("crop", true)
-
-				when (this.optionCropType) {
-					EasyImagePicker.CropImageType.FREE_CROPPING -> {
-						intent.putExtra("scale", true)
-					}
-					EasyImagePicker.CropImageType.ASPECT_RATIO -> {
-						intent.putExtra("aspectX", this.cropAspectRatioHorizontal)
-						intent.putExtra("aspectY", this.cropAspectRatioVertical)
-					}
-					EasyImagePicker.CropImageType.FIXED_SIZE -> {
-						intent.putExtra("outputX", this.cropSizeWidth)
-						intent.putExtra("outputY", this.cropSizeHeight)
-					}
-				}
-
-				intent.putExtra("return-data", true)
-			}
+			this.setupCroppingIntent(intent)
 
 			return intent
 		}

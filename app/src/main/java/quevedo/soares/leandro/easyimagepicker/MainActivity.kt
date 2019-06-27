@@ -21,6 +21,7 @@ class MainActivity : AppCompatActivity() {
 
 	fun onClickCamera(v: View) {
 		EasyImagePicker.with(this)
+				.crop()
 				.listener { error, bitmap ->
 					if (error != null) {
 						Toast.makeText(this, error.message, Toast.LENGTH_SHORT).show()
