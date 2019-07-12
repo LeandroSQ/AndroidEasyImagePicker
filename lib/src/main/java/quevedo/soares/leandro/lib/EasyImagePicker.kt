@@ -20,11 +20,12 @@ import android.support.v4.app.FragmentManager
 import android.support.v4.content.FileProvider
 import android.support.v7.app.AppCompatActivity
 import android.util.Log
+import quevedo.soares.leandro.lib.enumerator.CropImageType
+import quevedo.soares.leandro.lib.enumerator.ImageSource
+import quevedo.soares.leandro.lib.view.CropImageDialog
+import quevedo.soares.leandro.lib.view.EventStealerFragment
 import java.io.File
-import java.lang.Exception
-import java.lang.IllegalArgumentException
 import java.util.*
-import kotlin.collections.ArrayList
 
 /**
  * @author Leandro Soares Quevedo
@@ -37,56 +38,6 @@ object EasyImagePicker {
     const val INTENT_CHOOSER_REQUEST_CODE: Int = 1040
     const val GALLERY_PICKER_REQUEST_CODE: Int = 1041
     const val CAMERA_CAPTURE_REQUEST_CODE: Int = 1042
-
-    enum class ImageSource {
-        GALLERY,
-        CAMERA,
-        ANY
-    }
-
-    enum class CropImageType {
-        FREE_CROPPING,
-        ASPECT_RATIO,
-        FIXED_SIZE
-    }
-
-    @SuppressLint("ValidFragment")
-    class EventStealerFragment : Fragment {
-
-        private var onPermissionsResultListener: (Int, Array<out String>, IntArray) -> Unit
-        private var onActivityResultListener: (Int, Int, Intent?) -> Unit
-
-        constructor(
-            onPermissionsResultListener: (Int, Array<out String>, IntArray) -> Unit,
-            onActivityResultListener: (Int, Int, Intent?) -> Unit
-        ) {
-            this.onPermissionsResultListener = onPermissionsResultListener
-            this.onActivityResultListener = onActivityResultListener
-        }
-
-        fun setup(
-            onPermissionsResultListener: (Int, Array<out String>, IntArray) -> Unit,
-            onActivityResultListener: (Int, Int, Intent?) -> Unit
-        ) {
-            this.onPermissionsResultListener = onPermissionsResultListener
-            this.onActivityResultListener = onActivityResultListener
-        }
-
-        override fun onRequestPermissionsResult(
-            requestCode: Int,
-            permissions: Array<out String>,
-            grantResults: IntArray
-        ) {
-            super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-            this.onPermissionsResultListener(requestCode, permissions, grantResults)
-        }
-
-        override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-            super.onActivityResult(requestCode, resultCode, data)
-            this.onActivityResultListener(requestCode, resultCode, data)
-        }
-
-    }
 
     class ImagePickerRequest {
 
@@ -117,10 +68,14 @@ object EasyImagePicker {
 
         //</editor-fold>
 
-        private var imageSource: ImageSource = EasyImagePicker.ImageSource.ANY
+        //<editor-fold defaultstate="Collapsed" desc="Storage variables">
+
+        private var imageSource: ImageSource = ImageSource.ANY
 
         private var temporaryFile: Uri? = null
         private val fileProviderAuthority: String by lazy { this.context.applicationContext.packageName + ".provider" }
+
+        //</editor-fold>
 
         //<editor-fold defaultstate="Collapsed" desc="Callbacks">
 
@@ -132,13 +87,20 @@ object EasyImagePicker {
 
         //<editor-fold defaultstate="Collapsed" desc="Cropping options">
         private var optionCrop: Boolean = false
-        private var optionCropType: CropImageType = EasyImagePicker.CropImageType.FREE_CROPPING
+        private var waitingForCrop: Boolean = false
+        internal var optionCropType: CropImageType = CropImageType.FREE_CROPPING
 
-        private var cropAspectRatioHorizontal: Int = 0
-        private var cropAspectRatioVertical: Int = 0
+        internal var cropAspectRatioHorizontal: Int = 0
+        internal var cropAspectRatioVertical: Int = 0
 
-        private var cropSizeWidth: Int = 0
-        private var cropSizeHeight: Int = 0
+        internal var cropSizeWidth: Int = 0
+        internal var cropSizeHeight: Int = 0
+
+        internal var cropMinimumSizeWidth: Int? = null
+        internal var cropMinimumSizeHeight: Int? = null
+
+        internal var cropMaximumSizeWidth: Int? = null
+        internal var cropMaximumSizeHeight: Int? = null
         //</editor-fold>
 
         constructor(activity: AppCompatActivity) {
@@ -157,6 +119,9 @@ object EasyImagePicker {
             this.createEventListener()
         }
 
+        /***
+         * This method creates the Fragment that will steal the OnActivityResult and OnPermissionsResult
+         ***/
         private fun createEventListener() {
             // Find the fragment
             eventListenerFragment = fragmentManager.findFragmentByTag(FRAGMENT_ID) as? EventStealerFragment
@@ -203,28 +168,84 @@ object EasyImagePicker {
             return list.isEmpty()
         }
 
+        /***
+         * Enables the free-cropping option
+         ***/
         fun crop(): ImagePickerRequest {
             this.optionCrop = true
-            this.optionCropType = EasyImagePicker.CropImageType.FREE_CROPPING
+            this.optionCropType = CropImageType.FREE_CROPPING
 
             return this
         }
 
+        /***
+         * Locks the image size when cropping
+         *
+         * Also, if cropping is disabled this option enables it
+         * @see crop
+         ***/
         fun size(width: Int, height: Int): ImagePickerRequest {
             this.optionCrop = true
-            this.optionCropType = EasyImagePicker.CropImageType.FIXED_SIZE
+            this.optionCropType = CropImageType.FIXED_SIZE
 
             return this
         }
 
+        /***
+         * Sets the minimum image size when cropping
+         *
+         * Also, if cropping is disabled this option enables it
+         * @see crop
+         ***/
+        fun minimumSize(width: Int, height: Int): ImagePickerRequest {
+            this.optionCrop = true
+            this.cropMinimumSizeWidth = width
+            this.cropMinimumSizeHeight = height
+
+            this.validateAspectRatio()
+
+            return this
+        }
+
+        /***
+         * Sets the maximum image size when cropping
+         *
+         * Also, if cropping is disabled this option enables it
+         * @see crop
+         ***/
+        fun maximumSize(width: Int, height: Int): ImagePickerRequest {
+            this.optionCrop = true
+            this.cropMaximumSizeWidth = width
+            this.cropMaximumSizeHeight = height
+
+            this.validateAspectRatio()
+
+            return this
+        }
+
+        /***
+         * Locks the image aspect ratio when cropping
+         *
+         * Also, if cropping is disabled this option enables it
+         * @see crop
+         ***/
         fun aspectRatio(horizontal: Int, vertical: Int): ImagePickerRequest {
             this.optionCrop = true
-            this.optionCropType = EasyImagePicker.CropImageType.ASPECT_RATIO
+            this.optionCropType = CropImageType.ASPECT_RATIO
+            this.cropAspectRatioHorizontal = horizontal
+            this.cropAspectRatioVertical = vertical
+
+            this.validateAspectRatio()
 
             return this
         }
 
-        fun pick(source: ImageSource = EasyImagePicker.ImageSource.ANY) {
+        /***
+         * Starts the image picker
+         *
+         * @param source Provides the source of the given image, can be CAMERA, GALLERY or ANY (Any meaning that user will select which source he wants)
+         ***/
+        fun pick(source: ImageSource = ImageSource.ANY) {
             this.imageSource = source
 
             this.requestImage()
@@ -234,6 +255,11 @@ object EasyImagePicker {
 
         //<editor-fold defaultstate="Collapsed" desc="Listener methods">
 
+        /***
+         * Sets the listener to be called when the bitmap is selected
+         *
+         * Null when none
+         ***/
         fun listener(listener: (Bitmap?) -> Unit): ImagePickerRequest {
             this.successListener = listener
             this.errorListener = {
@@ -243,6 +269,11 @@ object EasyImagePicker {
             return this
         }
 
+        /***
+         * Sets the listener to be called when the bitmap is selected
+         *
+         * Null when none
+         ***/
         fun listener(listener: (Throwable?, Bitmap?) -> Unit): ImagePickerRequest {
             this.successListener = {
                 listener(null, it)
@@ -255,6 +286,11 @@ object EasyImagePicker {
             return this
         }
 
+        /***
+         * Sets the listener to be called when the bitmap is selected
+         *
+         * Null when none
+         ***/
         fun listener(success: (Bitmap?) -> Unit, error: ((Throwable) -> Unit)?): ImagePickerRequest {
             this.successListener = success
 
@@ -268,11 +304,7 @@ object EasyImagePicker {
 
         //<editor-fold defaultstate="Collapsed" desc="Permission handling">
 
-        fun handlePermissionResult(
-            requestCode: Int,
-            permissions: Array<out String>,
-            grantResults: Array<Int>
-        ): Boolean {
+        private fun handlePermissionResult(requestCode: Int, permissions: Array<out String>, grantResults: Array<Int>): Boolean {
             if (requestCode == PERMISSION_REQUEST_CODE) {
                 // Check if all the requested permissions were granted!
                 if (grantResults.all { x -> x == PackageManager.PERMISSION_GRANTED }) {
@@ -319,25 +351,6 @@ object EasyImagePicker {
             }
         }
 
-        private fun checkManifestPermissions(): Boolean {
-            if (!this.isPermissionGranted(Manifest.permission.READ_EXTERNAL_STORAGE)) {
-                // The read_external_storage permission is either not_requested or denied
-                this.handleError("The read external storage permission is denied!")
-                return false
-            } else if (!this.isPermissionGranted(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
-                // The write_external_storage permission is either not_requested or denied
-                this.handleError("The write external storage permission is denied!")
-                return false
-            } else if (!this.isPermissionGranted(Manifest.permission.CAMERA)) {
-                // The camera permission is either not_requested or denied
-                this.handleError("The camera permission is denied!")
-                return false
-            } else {
-                // All permissions are gracefully granted, just continue
-                return true
-            }
-        }
-
         private fun handleError(message: String) {
             this.handled = true
             this.errorListener?.invoke(Exception(message))
@@ -345,7 +358,43 @@ object EasyImagePicker {
 
         //</editor-fold>
 
+        private fun validateAspectRatio() {
+            fun sizeMatchesAspectRatio(width: Int, height: Int, aspectRatio: Float): Boolean {
+                val ratioHeight = width * aspectRatio
+                return height.toFloat() == ratioHeight
+            }
+
+            // Ignores this validation when the aspect ratio is not set
+            if (optionCropType != CropImageType.ASPECT_RATIO) return
+
+            // Calculate the aspect ratio fraction
+            val aspectRatio = (this.cropAspectRatioHorizontal / this.cropAspectRatioVertical).toFloat()
+
+            // Check if the provided minimum width is on the locked ratio
+            if (cropMinimumSizeWidth != null && cropMinimumSizeHeight != null) {
+                if (!sizeMatchesAspectRatio(cropMinimumSizeWidth!!, cropMinimumSizeHeight!!, aspectRatio)) {
+                    Log.e("EasyImagePicker", "The provided minimum size does not match the aspect ratio")
+
+                    throw IllegalArgumentException("The provided minimum size does not match the aspect ratio")
+                } else {
+                    Log.d("EasyImagePicker", "The provided minimum size matches the aspect ratio")
+                }
+            }
+
+            // Check if the provided maximum width is on the locked ratio
+            if (cropMaximumSizeWidth != null && cropMaximumSizeHeight != null) {
+                if (!sizeMatchesAspectRatio(cropMaximumSizeWidth!!, cropMaximumSizeHeight!!, aspectRatio)) {
+                    Log.e("EasyImagePicker", "The provided maximum size does not match the aspect ratio")
+
+                    throw IllegalArgumentException("The provided maximum size does not match the aspect ratio")
+                } else {
+                    Log.d("EasyImagePicker", "The provided maximum size matches the aspect ratio")
+                }
+            }
+        }
+
         private fun requestImage() {
+            // If the fragment is created but not added
             if (!this.eventListenerFragment?.isAdded!!) {
                 Handler(Looper.getMainLooper()).post(this::requestImage)
                 return
@@ -355,32 +404,20 @@ object EasyImagePicker {
             // First of all, just check the manifest permissions
             if (this.requestPermissions()) {
                 when (this.imageSource) {
-                    EasyImagePicker.ImageSource.GALLERY -> {
+                    ImageSource.GALLERY -> {
                         Log.d("EasyImagePicker", "Requesting image from gallery...")
                         val intent = this.createGalleryPickIntent()
 
                         this.eventListenerFragment?.startActivityForResult(intent, GALLERY_PICKER_REQUEST_CODE)
-
-                        /*if (this.activity != null) {
-                            this.activity!!.startActivityForResult(intent, GALLERY_PICKER_REQUEST_CODE)
-                        } else {
-                            this.fragment!!.startActivityForResult(intent, GALLERY_PICKER_REQUEST_CODE)
-                        }*/
                     }
-                    EasyImagePicker.ImageSource.CAMERA -> {
+                    ImageSource.CAMERA -> {
                         Log.d("EasyImagePicker", "Requesting camera image capture...")
 
                         val intent = this.createCameraCaptureIntent()
 
                         this.eventListenerFragment?.startActivityForResult(intent, CAMERA_CAPTURE_REQUEST_CODE)
-
-                        /*if (this.activity != null) {
-                            this.activity!!.startActivityForResult(intent, CAMERA_CAPTURE_REQUEST_CODE)
-                        } else {
-                            this.fragment!!.startActivityForResult(intent, CAMERA_CAPTURE_REQUEST_CODE)
-                        }*/
                     }
-                    EasyImagePicker.ImageSource.ANY -> {
+                    ImageSource.ANY -> {
                         Log.d("EasyImagePicker", "Requesting user image source...")
                         this.showImagePickerIntent()
                     }
@@ -390,89 +427,7 @@ object EasyImagePicker {
             }
         }
 
-        //<editor-fold defaultstate="Collapsed" desc="Intent handling">
-
-        fun handleActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
-            when (requestCode) {
-                INTENT_CHOOSER_REQUEST_CODE -> {
-                    if (resultCode == Activity.RESULT_OK) {
-                        Log.d("EasyImagePicker", "User has selected the image source!")
-
-                        this.handleBitmapResponse(data)
-                    } else {
-                        Log.d("EasyImagePicker", "User has dismissed the intent chooser!")
-                    }
-                    return true
-                }
-                GALLERY_PICKER_REQUEST_CODE -> {
-                    if (resultCode == Activity.RESULT_OK) {
-                        Log.d("EasyImagePicker", "User has selected the image!")
-
-                        this.handleBitmapResponse(data)
-                    } else {
-                        Log.d("EasyImagePicker", "Gallery picking operation has either been canceled or failed!")
-                    }
-                    return true
-                }
-                CAMERA_CAPTURE_REQUEST_CODE -> {
-                    if (resultCode == Activity.RESULT_OK) {
-                        Log.d("EasyImagePicker", "User has captured the image!")
-
-                        this.handleBitmapResponse(data)
-                    } else {
-                        Log.d("EasyImagePicker", "Camera capturing operation has either been canceled or failed!")
-                    }
-                    return true
-                }
-                else -> return false
-            }
-        }
-
-        private fun handleBitmapResponse(response: Intent?) {
-            if (response != null) {
-                when {
-                    // Check for the "return-data" behaviour
-                    response.hasExtra("data") -> {
-                        val image = response.extras!!.get("data") as Bitmap
-
-                        this.successListener?.invoke(image)
-                    }
-
-                    // Check for the URI "intent-data" behaviour
-                    response.data != null -> {
-                        val result = this.loadBitmapFromUri(response.data!!)
-
-                        this.successListener?.invoke(result)
-                    }
-
-                    // Check for the "output" extra
-                    response.hasExtra(MediaStore.EXTRA_OUTPUT) -> {
-                        val image = response.extras!!.get(MediaStore.EXTRA_OUTPUT) as? Bitmap
-
-                        // Check if an image was provided
-                        if (image == null) {
-                            // Otherwise, check if a file path was provided
-                            (response.extras!!.get(MediaStore.EXTRA_OUTPUT) as? Uri)?.let { uri ->
-                                this.temporaryFile = uri
-                                this.successListener?.invoke(this.loadBitmapFromUri(uri))
-                            }
-                        } else {
-                            this.successListener?.invoke(image)
-                        }
-                    }
-
-                    else -> {
-                        this.handleError("Unable to get the gallery output!")
-                    }
-                }
-            } else if (this.temporaryFile != null) {
-                val result = this.loadBitmapFromUri(this.temporaryFile!!)
-
-                this.successListener?.invoke(result)
-            } else {
-                this.handleError("Some error has occurred!")
-            }
-        }
+        //<editor-fold defaultstate="Collapsed" desc="Bitmap handling">
 
         private fun loadBitmapFromUri(uri: Uri): Bitmap? {
             // Loads the bitmap from the URI
@@ -520,6 +475,107 @@ object EasyImagePicker {
             }
         }
 
+        //</editor-fold>
+
+        //<editor-fold defaultstate="Collapsed" desc="Intent handling">
+
+        private fun handleActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
+            when (requestCode) {
+                INTENT_CHOOSER_REQUEST_CODE -> {
+                    if (resultCode == Activity.RESULT_OK) {
+                        Log.d("EasyImagePicker", "User has selected the image source!")
+
+                        this.handleBitmapResponse(data)
+                    } else {
+                        Log.d("EasyImagePicker", "User has dismissed the intent chooser!")
+                    }
+                    return true
+                }
+                GALLERY_PICKER_REQUEST_CODE -> {
+                    if (resultCode == Activity.RESULT_OK) {
+                        Log.d("EasyImagePicker", "User has selected the image!")
+
+                        this.handleBitmapResponse(data)
+                    } else {
+                        Log.d("EasyImagePicker", "Gallery picking operation has either been canceled or failed!")
+                    }
+                    return true
+                }
+                CAMERA_CAPTURE_REQUEST_CODE -> {
+                    if (resultCode == Activity.RESULT_OK) {
+                        Log.d("EasyImagePicker", "User has captured the image!")
+
+                        this.handleBitmapResponse(data)
+                    } else {
+                        Log.d("EasyImagePicker", "Camera capturing operation has either been canceled or failed!")
+                    }
+                    return true
+                }
+                else -> return false
+            }
+        }
+
+        @Suppress("CascadeIf")
+        private fun handleBitmapResponse(response: Intent?) {
+            fun handleBitmap(bitmap: Bitmap?) {
+                // Check if it is waiting for crop
+                if (this.waitingForCrop && bitmap != null) {
+                    // Open the crop dialog
+                    CropImageDialog.show(
+                        fragmentManager,
+                        this,
+                        bitmap
+                    )
+                } else {
+                    this.successListener?.invoke(bitmap)
+                }
+            }
+
+            if (response != null) {
+                when {
+                    // Check for the "return-data" behaviour
+                    response.hasExtra("data") -> {
+                        val image = response.extras!!.get("data") as Bitmap
+
+                        handleBitmap(image)
+                    }
+
+                    // Check for the URI "intent-data" behaviour
+                    response.data != null -> {
+                        val result = this.loadBitmapFromUri(response.data!!)
+
+                        handleBitmap(result)
+                    }
+
+                    // Check for the "output" extra
+                    response.hasExtra(MediaStore.EXTRA_OUTPUT) -> {
+                        val image = response.extras!!.get(MediaStore.EXTRA_OUTPUT) as? Bitmap
+
+                        // Check if an image was provided
+                        if (image == null) {
+                            // Otherwise, check if a file path was provided
+                            (response.extras!!.get(MediaStore.EXTRA_OUTPUT) as? Uri)?.let { uri ->
+                                this.temporaryFile = uri
+                                handleBitmap(this.loadBitmapFromUri(uri))
+                            }
+                        } else {
+                            handleBitmap(image)
+                        }
+                    }
+
+                    else -> {
+                        this.handleError("Unable to get the gallery output!")
+                    }
+                }
+            } else if (this.temporaryFile != null) {
+                val result = this.loadBitmapFromUri(this.temporaryFile!!)
+
+                handleBitmap(result)
+            } else {
+                this.handleError("Some error has occurred!")
+            }
+        }
+
         @SuppressLint("SimpleDateFormat")
         private fun createTemporaryFile(): File {
             // Generate an unique filename
@@ -537,16 +593,14 @@ object EasyImagePicker {
                     intent.putExtra("crop", "true")
 
                     when (this.optionCropType) {
-                        EasyImagePicker.CropImageType.FREE_CROPPING -> {
+                        CropImageType.FREE_CROPPING -> {
                             intent.putExtra("scale", "true")
                         }
-
-                        EasyImagePicker.CropImageType.ASPECT_RATIO -> {
+                        CropImageType.ASPECT_RATIO -> {
                             intent.putExtra("aspectX", this.cropAspectRatioHorizontal)
                             intent.putExtra("aspectY", this.cropAspectRatioVertical)
                         }
-
-                        EasyImagePicker.CropImageType.FIXED_SIZE -> {
+                        CropImageType.FIXED_SIZE -> {
                             intent.putExtra("outputX", this.cropSizeWidth)
                             intent.putExtra("outputY", this.cropSizeHeight)
                         }
@@ -554,9 +608,8 @@ object EasyImagePicker {
 
                     intent.putExtra("return-data", true)
                 } else {
-
+                    waitingForCrop = true
                 }
-
             }
         }
 
@@ -647,7 +700,7 @@ object EasyImagePicker {
             this.eventListenerFragment?.startActivityForResult(chooserIntent, INTENT_CHOOSER_REQUEST_CODE)
         }
 
-        private fun disableFileUriExposureCrash () {
+        private fun disableFileUriExposureCrash() {
             // For old API`s and file exposure without FileProvider
             try {
                 val method = StrictMode::class.java.getMethod("disableDeathOnFileUriExposure")
@@ -656,20 +709,25 @@ object EasyImagePicker {
                 e.printStackTrace()
             }
         }
+
         //</editor-fold>
 
     }
 
-    /**
+    /***
      * This method receives an activity and retrieves an image picker instance
-     **/
+     *
+     * @param fragment The parent
+     ***/
     fun with(activity: AppCompatActivity): ImagePickerRequest {
         return ImagePickerRequest(activity)
     }
 
-    /**
+    /***
      * This method receives a fragment and retrieves an image picker instance
-     **/
+     *
+     * @param fragment The parent
+     ***/
     fun with(fragment: Fragment): ImagePickerRequest {
         return ImagePickerRequest(fragment)
     }

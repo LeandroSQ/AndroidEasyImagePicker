@@ -4,8 +4,7 @@
 	android:layout_height="match_parent"
 	android:orientation="vertical">
 
-	<view
-		class="quevedo.soares.leandro.lib.CropImageDialog$CropView"
+	<quevedo.soares.leandro.lib.view.CropView
 		android:layout_width="match_parent"
 		android:layout_height="0dp"
 		android:id="@+id/cropView"

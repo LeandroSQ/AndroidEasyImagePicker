@@ -1,4 +1,4 @@
-package quevedo.soares.leandro.lib
+package quevedo.soares.leandro.lib.view
 
 import android.app.Dialog
 import android.graphics.Color

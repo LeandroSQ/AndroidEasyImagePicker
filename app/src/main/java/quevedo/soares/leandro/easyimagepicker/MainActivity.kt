@@ -1,14 +1,12 @@
 package quevedo.soares.leandro.easyimagepicker
 
-import android.content.Intent
-import android.graphics.BitmapFactory
-import android.support.v7.app.AppCompatActivity
 import android.os.Bundle
+import android.support.v7.app.AppCompatActivity
 import android.view.View
 import android.widget.Toast
 import kotlinx.android.synthetic.main.activity_main.*
-import quevedo.soares.leandro.lib.CropImageDialog
 import quevedo.soares.leandro.lib.EasyImagePicker
+import quevedo.soares.leandro.lib.enumerator.ImageSource
 
 class MainActivity : AppCompatActivity() {
 
@@ -19,11 +17,11 @@ class MainActivity : AppCompatActivity() {
 
 
     fun onClickCamera(v: View) {
-        CropImageDialog.show(this, BitmapFactory.decodeResource(resources, R.drawable.credit_card))
-        return
+        Toast.makeText(this, "FIXED_SIZE 128x128", Toast.LENGTH_SHORT).show()
 
         EasyImagePicker.with(this)
             .crop()
+            .size(128, 128)
             .listener { error, bitmap ->
                 if (error != null) {
                     Toast.makeText(this, error.message, Toast.LENGTH_SHORT).show()
@@ -31,15 +29,15 @@ class MainActivity : AppCompatActivity() {
                     image.setImageBitmap(bitmap)
                 }
             }
-            .pick(EasyImagePicker.ImageSource.CAMERA)
+            .pick(ImageSource.CAMERA)
 
     }
 
     fun onClickGallery(v: View) {
-        CropImageDialog.show(this, BitmapFactory.decodeResource(resources, R.drawable.credit_card))
-        return
+        Toast.makeText(this, "MINIMUM 256x256", Toast.LENGTH_SHORT).show()
 
         EasyImagePicker.with(this)
+            .minimumSize(256, 256)
             .listener { error, bitmap ->
                 if (error != null) {
                     Toast.makeText(this, error.message, Toast.LENGTH_SHORT).show()
@@ -47,14 +45,14 @@ class MainActivity : AppCompatActivity() {
                     image.setImageBitmap(bitmap)
                 }
             }
-            .pick(EasyImagePicker.ImageSource.GALLERY)
+            .pick(ImageSource.GALLERY)
     }
 
     fun onClickAny(v: View) {
-        CropImageDialog.show(this, BitmapFactory.decodeResource(resources, R.drawable.credit_card))
-        return
+        Toast.makeText(this, "ASPECT RATIO 2x1", Toast.LENGTH_SHORT).show()
 
         EasyImagePicker.with(this)
+            .aspectRatio(2, 1)
             .listener { error, bitmap ->
                 if (error != null) {
                     Toast.makeText(this, error.message, Toast.LENGTH_SHORT).show()
@@ -62,7 +60,7 @@ class MainActivity : AppCompatActivity() {
                     image.setImageBitmap(bitmap)
                 }
             }
-            .pick(EasyImagePicker.ImageSource.ANY)
+            .pick(ImageSource.ANY)
     }
 
 }
