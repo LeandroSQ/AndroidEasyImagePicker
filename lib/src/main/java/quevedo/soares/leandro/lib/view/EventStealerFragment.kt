@@ -12,27 +12,28 @@ import android.support.v4.app.Fragment
 @SuppressLint("ValidFragment")
 class EventStealerFragment : Fragment {
 
-    private var onPermissionsResultListener: (Int, Array<out String>, IntArray) -> Unit
-    private var onActivityResultListener: (Int, Int, Intent?) -> Unit
+	private var onPermissionsResultListener: ((Int, Array<out String>, IntArray) -> Unit)? = null
+	private var onActivityResultListener: ((Int, Int, Intent?) -> Unit)? = null
 
-    constructor(onPermissionsResultListener: (Int, Array<out String>, IntArray) -> Unit, onActivityResultListener: (Int, Int, Intent?) -> Unit) {
-        this.onPermissionsResultListener = onPermissionsResultListener
-        this.onActivityResultListener = onActivityResultListener
-    }
+	constructor()
 
-    fun setup(onPermissionsResultListener: (Int, Array<out String>, IntArray) -> Unit, onActivityResultListener: (Int, Int, Intent?) -> Unit) {
-        this.onPermissionsResultListener = onPermissionsResultListener
-        this.onActivityResultListener = onActivityResultListener
-    }
+	constructor(onPermissionsResultListener: (Int, Array<out String>, IntArray) -> Unit, onActivityResultListener: (Int, Int, Intent?) -> Unit) {
+		setup(onPermissionsResultListener, onActivityResultListener)
+	}
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        this.onPermissionsResultListener(requestCode, permissions, grantResults)
-    }
+	fun setup(onPermissionsResultListener: (Int, Array<out String>, IntArray) -> Unit, onActivityResultListener: (Int, Int, Intent?) -> Unit) {
+		this.onPermissionsResultListener = onPermissionsResultListener
+		this.onActivityResultListener = onActivityResultListener
+	}
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        this.onActivityResultListener(requestCode, resultCode, data)
-    }
+	override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+		super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+		onPermissionsResultListener?.invoke(requestCode, permissions, grantResults)
+	}
+
+	override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+		super.onActivityResult(requestCode, resultCode, data)
+		onActivityResultListener?.invoke(requestCode, resultCode, data)
+	}
 
 }

@@ -1,40 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-	xmlns:app="http://schemas.android.com/apk/res-auto"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
 	xmlns:tools="http://schemas.android.com/tools"
 	android:layout_width="match_parent"
 	android:layout_height="match_parent"
-	android:orientation="vertical"
+	android:fillViewport="true"
 	tools:context=".MainActivity">
 
-	<ImageView
-		android:layout_width="match_parent"
-		android:id="@+id/image"
-		android:layout_height="400dp"
-		android:scaleType="fitCenter"
-		android:layout_gravity="center"
-		tools:src="@tools:sample/avatars" />
-
-
-	<Button
+	<LinearLayout
 		android:layout_width="match_parent"
 		android:layout_height="wrap_content"
-		android:layout_marginTop="20dp"
-		android:text="Camera"
-		android:onClick="onClickCamera" />
+		android:orientation="vertical">
 
-	<Button
-		android:layout_width="match_parent"
-		android:layout_height="wrap_content"
-		android:layout_marginTop="20dp"
-		android:text="Gallery"
-		android:onClick="onClickGallery" />
+		<ImageView
+			android:id="@+id/image"
+			android:layout_width="match_parent"
+			android:layout_height="400dp"
+			android:layout_gravity="center"
+			android:scaleType="fitCenter"
+			tools:src="@tools:sample/avatars" />
 
-	<Button
-		android:layout_width="match_parent"
-		android:layout_height="wrap_content"
-		android:layout_marginTop="20dp"
-		android:text="Any"
-		android:onClick="onClickAny" />
+		<Button
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:layout_marginTop="20dp"
+			android:onClick="onClickCamera"
+			android:text="Camera" />
 
-</LinearLayout>
+		<Button
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:layout_marginTop="20dp"
+			android:onClick="onClickGallery"
+			android:text="Gallery" />
+
+		<Button
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:layout_marginTop="20dp"
+			android:onClick="onClickAny"
+			android:text="Any" />
+	</LinearLayout>
+</ScrollView>

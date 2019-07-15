@@ -8,6 +8,7 @@ import kotlinx.android.synthetic.main.activity_main.*
 import quevedo.soares.leandro.lib.EasyImagePicker
 import quevedo.soares.leandro.lib.enumerator.ImageSource
 
+
 class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
