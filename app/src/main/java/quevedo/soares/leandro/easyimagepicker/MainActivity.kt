@@ -22,7 +22,7 @@ class MainActivity : AppCompatActivity() {
 
         EasyImagePicker.with(this)
             .crop()
-            .size(128, 128)
+            .size(256, 128)
             .listener { error, bitmap ->
                 if (error != null) {
                     Toast.makeText(this, error.message, Toast.LENGTH_SHORT).show()

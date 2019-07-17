@@ -189,6 +189,8 @@ object EasyImagePicker {
 		fun size(width: Int, height: Int): ImagePickerRequest {
 			this.optionCrop = true
 			this.optionCropType = CropImageType.FIXED_SIZE
+			this.cropSizeWidth = width
+			this.cropSizeHeight = height
 
 			return this
 		}

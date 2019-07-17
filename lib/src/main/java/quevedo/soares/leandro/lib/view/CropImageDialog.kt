@@ -35,9 +35,7 @@ class CropImageDialog : BaseDialog() {
 				dialog.options = imagePickerRequest
 				dialog.requestedOritentation = activity.requestedOrientation
 				dialog.show(fragmentManager, "CropImageDialog")
-
 			}
-
 		}
 	}
 
