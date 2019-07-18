@@ -721,7 +721,7 @@ object EasyImagePicker {
 	/***
 	 * This method receives an activity and retrieves an image picker instance
 	 *
-	 * @param fragment The parent
+	 * @param activity The parent
 	 ***/
 	fun with(activity: AppCompatActivity): ImagePickerRequest {
 		return ImagePickerRequest(activity)
