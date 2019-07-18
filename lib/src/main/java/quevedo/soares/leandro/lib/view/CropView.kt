@@ -111,17 +111,17 @@ class CropView : FrameLayout {
         this.cropRectCornerPaint = Paint(this.cropRectLinePaint)
         this.cropRectCornerPaint.strokeWidth = 4f * resources.displayMetrics.density
         this.cropRectCornerPaint.style = Paint.Style.FILL
-        this.cropRectCornerPaint.colorFilter = ColorMatrixColorFilter(
+        /*this.cropRectCornerPaint.colorFilter = ColorMatrixColorFilter(
             ColorMatrix(
                 floatArrayOf(
-                    -1.0f, 0.0f, 0.0f, 1.0f, 0.0f,
-                    0.0f, -1.0f, 0.0f, 1.0f, 0.0f,
-                    0.0f, 0.0f, -1.0f, 1.0f, 0.0f,
-                    1.0f, 1.0f, 1.0f, 1.0f, 0.0f
+                    -1.0f, 0f, 0f, 0f, 255f, // Red
+                    0f, -1.0f, 0f, 0f, 255f, // Green
+                    0f, 0f, -1.0f, 0f, 255f, // Blue
+                    0f, 0f, 0f, 1.0f, 0f // Alpha
                 )
             )
-        )
-        //this.cropRectCornerPaint.color = Color.argb(255, 180, 180, 180)
+        )*/
+        this.cropRectCornerPaint.color = Color.argb(255, 180, 180, 180)
 
         this.cropRectMaskPaint = Paint()
         this.cropRectMaskPaint.color = Color.BLACK
@@ -147,6 +147,7 @@ class CropView : FrameLayout {
                 pointerCount--
 
                 if (activePointerIndex == pointer) {
+                    // Resets the dragging indicators
                     dragging = false
                     activePointerIndex = -1
                     dragType = null
@@ -162,9 +163,9 @@ class CropView : FrameLayout {
                 val position = PointF(event.getX(activePointerIndex), event.getY(activePointerIndex))
 
                 if (this.dragType == null) {
-                    initDrag()
+                    onDragStart()
                 } else {
-                    handleDrag(position)
+                    onDragUpdate(position)
                 }
 
                 this.lastPosition = position
@@ -181,7 +182,7 @@ class CropView : FrameLayout {
         return sqrt((y2 - y1) * (y2 - y1) + (x2 - x1) * (x2 - x1))
     }
 
-    private fun initDrag() {
+    private fun onDragStart() {
         Log.d("EasyImagePicker", "InitDrag")
 
         val cornerSize = calculateCornerSize()
@@ -229,7 +230,7 @@ class CropView : FrameLayout {
 
     }
 
-    private fun handleDrag(position: PointF) {
+    private fun onDragUpdate(position: PointF) {
         Log.d("EasyImagePicker", "HandleDrag")
 
         when (this.dragType!!) {
