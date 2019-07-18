@@ -46,6 +46,12 @@ class CropView : FrameLayout {
     var dragType: DragType? = null
     lateinit var lastPosition: PointF
 
+    private var canvasZoomPosition: PointF = PointF(0f, 0f)
+    private var canvasZoomX = 1f
+    private var canvasZoomY = 1f
+    private var lastCanvasZoomLevel = 1
+    private var lastX = 0f
+
     //<editor-fold defaultstate="Collapsed" desc="Constructors">
 
     constructor(context: Context) : super(context) {
@@ -150,6 +156,13 @@ class CropView : FrameLayout {
                     // Resets the dragging indicators
                     dragging = false
                     activePointerIndex = -1
+
+                    // If we were dragging
+                    if (this.dragType != null) {
+                        this.onDragEnd()
+                    }
+
+                    // Resets the drag type identifier
                     dragType = null
                 }
             }
@@ -370,6 +383,81 @@ class CropView : FrameLayout {
         }
 
         this.clipCorners()
+
+        onDragEnd()
+    }
+
+    private fun onDragEnd() {
+        // Check if the crop rect size is smalller than a threshold
+        // If so, resize the whole canvas to follow it
+        //val threshold =
+
+        val cropRectArea = cropRect.width() * cropRect.height()
+        val imageRectArea = imageRect.width() * imageRect.height()
+
+        val zoomLevel = max(1, ((1 - cropRectArea / imageRectArea) * 4f).toInt())
+        this.canvasZoomX = zoomLevel.toFloat()
+        this.canvasZoomY = zoomLevel.toFloat()
+
+        /*this.canvasZoomPosition = PointF(
+            min ((cropRect.left.toFloat() * -zoomLevel).toInt().toFloat(), imageRect.width() / zoomLevel),
+            cropRect.top.toFloat() * -zoomLevel
+        )*/
+
+        if (zoomLevel != lastCanvasZoomLevel) {
+
+            // lastZoomLevel    lastCenterX
+            // currentZoomLevel x
+            // x = (lastZoomLevel * lastCenterX) / currentZoomLevel
+            this.canvasZoomPosition = PointF(
+                ((lastCanvasZoomLevel * (imageRect.left - cropRect.left)) / zoomLevel).toFloat(),
+                ((lastCanvasZoomLevel * lastCanvasZoomLevel) / zoomLevel).toFloat()
+            )
+
+            /*this.canvasZoomPosition = PointF(
+                ((zoomLevel * cropRect.centerX()) / -lastCanvasZoomLevel).toFloat(),
+                ((zoomLevel * cropRect.centerY()) / -lastCanvasZoomLevel).toFloat()
+            )
+            this.canvasZoomPosition = PointF(
+                ((-zoomLevel * this.canvasZoomPosition.x) / lastCanvasZoomLevel).toFloat(),
+                ((-zoomLevel * this.canvasZoomPosition.y) / lastCanvasZoomLevel).toFloat()
+            )*/
+
+            /*this.canvasZoomPosition = PointF(
+                ((-zoomLevel * cropRect.centerX()) / lastCanvasZoomLevel).toFloat(),
+                cropRect.top.toFloat() * -zoomLevel
+            )*/
+
+            lastCanvasZoomLevel = zoomLevel
+        } else {
+
+        }
+
+        /*//if (cropRectArea <= imageRectArea / 2f) {
+        val zoomFactor = 1 + (1 - cropRectArea / imageRectArea) * 2f
+        this.canvasZoomX = zoomFactor
+        this.canvasZoomY = zoomFactor
+
+        this.canvasZoomPosition = PointF(
+            cropRect.left.toFloat() * -zoomFactor,
+            cropRect.top.toFloat() * -zoomFactor
+        )
+
+        if (cropRect.bottom * zoomFactor >= imageRect.height() * zoomFactor + cropRect.height() * zoomFactor) {
+            this.canvasZoomPosition.y = imageRect.height() * zoomFactor - cropRect.height() * zoomFactor
+        }*/
+
+        //if (size <= threshold) {
+        //     =
+        // cropRectWidth = x
+        // x = imageWidth / cropRectWidth
+
+
+        /*} else {
+            this.canvasZoomPosition = PointF(0f, 0f)
+            this.canvasZoomX = 1f
+            this.canvasZoomY = 1f
+        }*/
     }
 
     private fun clipCorners() {
@@ -505,6 +593,7 @@ class CropView : FrameLayout {
         // Post delay a re-paint
         invalidate()
     }
+
 
     private fun drawCropRectangle(canvas: Canvas) {
         // Draw the outline
@@ -728,6 +817,7 @@ class CropView : FrameLayout {
         )
     }
 
+
     override fun onDraw(originCanvas: Canvas?) {
         super.onDraw(originCanvas)
 
@@ -741,14 +831,18 @@ class CropView : FrameLayout {
         }
 
         originCanvas?.let { canvas ->
+            canvas.save()
+            canvas.translate(canvasZoomPosition.x, canvasZoomPosition.y)
+            canvas.scale(canvasZoomX, canvasZoomY)
 
             canvas.drawBitmap(image, imageMatrix, null)
 
-            canvas.save()
+            /*canvas.save()
             canvas.clipRect(cropRect, Region.Op.DIFFERENCE)
             canvas.drawRect(Rect(0, 0, this.width, this.height), cropRectMaskPaint)
-            canvas.restore()
+            canvas.restore()*/
 
+            canvas.restore()
             this.drawCropRectangle(canvas)
 
         }
