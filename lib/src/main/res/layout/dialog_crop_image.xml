@@ -2,40 +2,70 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
 	android:layout_width="match_parent"
 	android:layout_height="match_parent"
+	android:background="@android:color/black"
+	android:clipChildren="false"
+	android:clipToPadding="false"
 	android:orientation="vertical">
 
 	<quevedo.soares.leandro.lib.view.CropView
+		android:id="@+id/cropView"
 		android:layout_width="match_parent"
 		android:layout_height="0dp"
-		android:id="@+id/cropView"
-		android:background="#000"
 		android:layout_weight="1" />
 
 	<LinearLayout
 		android:layout_width="match_parent"
-		android:layout_height="wrap_content"
-		android:weightSum="2">
+		android:layout_height="?android:attr/actionBarSize"
+		android:clipChildren="false"
+		android:clipToPadding="false"
+		android:weightSum="3">
 
-		<Button
-			style="?android:attr/borderlessButtonStyle"
-			android:layout_width="0dp"
+		<ImageButton
 			android:id="@+id/btnCancel"
-			android:layout_height="wrap_content"
+			android:layout_width="0dp"
+			android:layout_height="match_parent"
 			android:layout_weight="1"
-			android:text="Cancel" />
+			android:background="@drawable/selector_touchable"
+			android:contentDescription="Cancel"
+			android:paddingBottom="7dp"
+			android:src="@drawable/ic_cancel"
+			android:textColor="@android:color/white" />
 
 		<View
 			android:layout_width="1dp"
-			android:background="#ccc"
-			android:layout_height="match_parent"/>
+			android:layout_height="match_parent"
+			android:layout_marginTop="10dp"
+			android:layout_marginBottom="10dp"
+			android:background="#3ccc" />
 
-		<Button
-			style="?android:attr/borderlessButtonStyle"
+		<ImageButton
+			android:id="@+id/btnRotate"
 			android:layout_width="0dp"
-			android:id="@+id/btnOk"
-			android:layout_height="wrap_content"
+			android:layout_height="match_parent"
 			android:layout_weight="1"
-			android:text="OK" />
+			android:background="@drawable/selector_touchable"
+			android:contentDescription="Rotate"
+			android:paddingBottom="7dp"
+			android:src="@drawable/ic_rotate"
+			android:textColor="@android:color/white" />
+
+		<View
+			android:layout_width="1dp"
+			android:layout_height="match_parent"
+			android:layout_marginTop="10dp"
+			android:layout_marginBottom="10dp"
+			android:background="#3ccc" />
+
+		<ImageButton
+			android:id="@+id/btnOk"
+			android:layout_width="0dp"
+			android:layout_height="match_parent"
+			android:layout_weight="1"
+			android:background="@drawable/selector_touchable"
+			android:contentDescription="Done"
+			android:paddingBottom="7dp"
+			android:src="@drawable/ic_done"
+			android:textColor="@android:color/white" />
 
 	</LinearLayout>
 

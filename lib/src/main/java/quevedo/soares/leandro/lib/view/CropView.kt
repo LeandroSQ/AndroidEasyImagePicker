@@ -23,6 +23,7 @@ class CropView : FrameLayout {
     var image: Bitmap? = null
     var imageRect: RectF = RectF()
     var imageMatrix: Matrix = Matrix()
+	var scaledImage: Bitmap? = null
 
     var imageResized: Boolean = false
 
@@ -46,11 +47,8 @@ class CropView : FrameLayout {
     var dragType: DragType? = null
     lateinit var lastPosition: PointF
 
-    private var canvasZoomPosition: PointF = PointF(0f, 0f)
-    private var canvasZoomX = 1f
-    private var canvasZoomY = 1f
-    private var lastCanvasZoomLevel = 1
-    private var lastX = 0f
+	private var canvasTransform = Matrix()
+	var scaleFactor = 1f
 
     //<editor-fold defaultstate="Collapsed" desc="Constructors">
 
@@ -112,10 +110,10 @@ class CropView : FrameLayout {
 
         this.cropRectLinePaint = Paint(this.cropRectPaint)
         this.cropRectLinePaint.strokeWidth = 1f * resources.displayMetrics.density
-        this.cropRectLinePaint.color = Color.argb(100, 255, 255, 255)
+		this.cropRectLinePaint.color = Color.argb(255, 200, 200, 200)
 
         this.cropRectCornerPaint = Paint(this.cropRectLinePaint)
-        this.cropRectCornerPaint.strokeWidth = 4f * resources.displayMetrics.density
+		this.cropRectCornerPaint.strokeWidth = 2.5f * resources.displayMetrics.density
         this.cropRectCornerPaint.style = Paint.Style.FILL
         /*this.cropRectCornerPaint.colorFilter = ColorMatrixColorFilter(
             ColorMatrix(
@@ -127,7 +125,7 @@ class CropView : FrameLayout {
                 )
             )
         )*/
-        this.cropRectCornerPaint.color = Color.argb(255, 180, 180, 180)
+		this.cropRectCornerPaint.color = Color.argb(255, 255, 255, 255)
 
         this.cropRectMaskPaint = Paint()
         this.cropRectMaskPaint.color = Color.BLACK
@@ -388,76 +386,30 @@ class CropView : FrameLayout {
     }
 
     private fun onDragEnd() {
-        // Check if the crop rect size is smalller than a threshold
-        // If so, resize the whole canvas to follow it
-        //val threshold =
-
-        val cropRectArea = cropRect.width() * cropRect.height()
-        val imageRectArea = imageRect.width() * imageRect.height()
-
-        val zoomLevel = max(1, ((1 - cropRectArea / imageRectArea) * 4f).toInt())
-        this.canvasZoomX = zoomLevel.toFloat()
-        this.canvasZoomY = zoomLevel.toFloat()
-
-        /*this.canvasZoomPosition = PointF(
-            min ((cropRect.left.toFloat() * -zoomLevel).toInt().toFloat(), imageRect.width() / zoomLevel),
-            cropRect.top.toFloat() * -zoomLevel
-        )*/
-
-        if (zoomLevel != lastCanvasZoomLevel) {
-
-            // lastZoomLevel    lastCenterX
-            // currentZoomLevel x
-            // x = (lastZoomLevel * lastCenterX) / currentZoomLevel
-            this.canvasZoomPosition = PointF(
-                ((lastCanvasZoomLevel * (imageRect.left - cropRect.left)) / zoomLevel).toFloat(),
-                ((lastCanvasZoomLevel * lastCanvasZoomLevel) / zoomLevel).toFloat()
-            )
-
-            /*this.canvasZoomPosition = PointF(
-                ((zoomLevel * cropRect.centerX()) / -lastCanvasZoomLevel).toFloat(),
-                ((zoomLevel * cropRect.centerY()) / -lastCanvasZoomLevel).toFloat()
-            )
-            this.canvasZoomPosition = PointF(
-                ((-zoomLevel * this.canvasZoomPosition.x) / lastCanvasZoomLevel).toFloat(),
-                ((-zoomLevel * this.canvasZoomPosition.y) / lastCanvasZoomLevel).toFloat()
-            )*/
-
-            /*this.canvasZoomPosition = PointF(
-                ((-zoomLevel * cropRect.centerX()) / lastCanvasZoomLevel).toFloat(),
-                cropRect.top.toFloat() * -zoomLevel
-            )*/
-
-            lastCanvasZoomLevel = zoomLevel
-        } else {
-
-        }
-
-        /*//if (cropRectArea <= imageRectArea / 2f) {
-        val zoomFactor = 1 + (1 - cropRectArea / imageRectArea) * 2f
-        this.canvasZoomX = zoomFactor
-        this.canvasZoomY = zoomFactor
-
-        this.canvasZoomPosition = PointF(
-            cropRect.left.toFloat() * -zoomFactor,
-            cropRect.top.toFloat() * -zoomFactor
-        )
-
-        if (cropRect.bottom * zoomFactor >= imageRect.height() * zoomFactor + cropRect.height() * zoomFactor) {
-            this.canvasZoomPosition.y = imageRect.height() * zoomFactor - cropRect.height() * zoomFactor
-        }*/
-
-        //if (size <= threshold) {
-        //     =
-        // cropRectWidth = x
-        // x = imageWidth / cropRectWidth
 
 
-        /*} else {
-            this.canvasZoomPosition = PointF(0f, 0f)
-            this.canvasZoomX = 1f
-            this.canvasZoomY = 1f
-        }*/
+		// Compute the scale
+		// imageRect 1
+		// cropRect x
+		// x = (cropRect / imageRect)
+		/*var scaleFactor = 0f
+
+		if (cropRect.width() > cropRect.height()) {
+			scaleFactor = imageRect.width() / cropRect.width()
+		} else {
+			scaleFactor = imageRect.height() / cropRect.height()
+		}
+
+
+		// Translate to the position
+		canvasTransform.preTranslate(cropRect.exactCenterX (), cropRect.exactCenterY())
+		canvasTransform.preScale(scaleFactor, scaleFactor)
+		canvasTransform.postTranslate(-cropRect.exactCenterX (), -cropRect.exactCenterY())*/
+
+		/*canvasTransform.setTranslate(cropRect.exactCenterX(), cropRect.exactCenterY())
+		canvasTransform.setScale(scaleFactor, scaleFactor)
+		canvasTransform.postTranslate(-imageRect.width() / 4f, imageRect.height() / 4f)*/
+
     }
 
     private fun clipCorners() {
@@ -503,6 +455,7 @@ class CropView : FrameLayout {
             var imageFinalY = 0f
             var imageFinalW = 0f
             var imageFinalH = 0f
+			val imagePadding = 7f * resources.displayMetrics.density
 
             // For the ladscape images
             if (it.width > it.height) {
@@ -554,55 +507,75 @@ class CropView : FrameLayout {
                 }
             }
 
+			imageFinalX += imagePadding
+			imageFinalY += imagePadding
+			imageFinalW -= imagePadding * 2
+			imageFinalH -= imagePadding * 2
+
             // Creates a rectangle from the image
             this.imageRect = RectF(
                 imageFinalX,
-                imageFinalY /*- imageFinalH / 4f*/,
+					imageFinalY,
                 imageFinalX + imageFinalW,
-                imageFinalY + imageFinalH /*- imageFinalH / 4f*/
+					imageFinalY + imageFinalH
             )
 
             // Translate the image
-            imageMatrix.postTranslate(imageFinalX, imageFinalY)
+			imageMatrix.preTranslate(imageRect.left + imagePadding, imageRect.top + imagePadding)
 
             // Calculate the scale from the original image size
-            val scaleX = imageFinalW / it.width
-            val scaleY = imageFinalH / it.height
+			val scaleX = imageRect.width() / it.width
+			val scaleY = imageRect.height() / it.height
             imageMatrix.postScale(scaleX, scaleY)
 
-            // Clamps the crop rect
-            if (hasMaximumSet && (cropRect.width() > rectMaxWidth || cropRect.height() > rectMaxHeight)) {
-                val x = imageRect.left + (imageRect.width() - rectMaxWidth) / 2f
-                val y = imageRect.top + (imageRect.height() - rectMaxHeight) / 2f
+			this.scaledImage = Bitmap.createScaledBitmap(image!!, imageRect.width().toInt(), imageRect.height().toInt(), false)
 
-                cropRect.left = x.toInt()
-                cropRect.right = (x + rectMaxWidth).toInt()
-                cropRect.top = y.toInt()
-                cropRect.bottom = (y + rectMaxHeight).toInt()
-            } else if (hasMinimumSet && (cropRect.width() < rectMinWidth || cropRect.height() < rectMinHeight)) {
-                val x = imageRect.left + imageRect.width() / 2f - rectMinWidth
-                val y = imageRect.top + imageRect.height() / 2f - rectMinHeight
-
-                cropRect.left = x.toInt()
-                cropRect.right = (x + rectMinWidth).toInt()
-                cropRect.top = y.toInt()
-                cropRect.bottom = (y + rectMinHeight).toInt()
-            }
+			this.centerCropRect()
         }
 
         // Post delay a re-paint
         invalidate()
     }
 
+	private fun centerCropRect() {
+		val imageCenter = PointF(
+				imageRect.centerX(),
+				imageRect.centerY()
+		)
+
+		when {
+			hasMaximumSet -> {
+				cropRect.left = (imageCenter.x - rectMaxWidth / 2).toInt()
+				cropRect.right = (cropRect.left + rectMaxWidth)
+
+				cropRect.top = (imageCenter.y - rectMaxHeight / 2).toInt()
+				cropRect.bottom = (cropRect.top + rectMaxHeight)
+			}
+			hasMinimumSet -> {
+				cropRect.left = (imageCenter.x - rectMinWidth / 2).toInt()
+				cropRect.right = (cropRect.left + rectMinWidth)
+
+				cropRect.top = (imageCenter.y - rectMinHeight / 2).toInt()
+				cropRect.bottom = (cropRect.top + rectMinHeight)
+			}
+			else -> {
+				cropRect.left = imageRect.left.toInt()
+				cropRect.right = imageRect.right.toInt()
+
+				cropRect.top = imageRect.top.toInt()
+				cropRect.bottom = imageRect.bottom.toInt()
+			}
+		}
+	}
 
     private fun drawCropRectangle(canvas: Canvas) {
         // Draw the outline
         canvas.drawRect(cropRect, this.cropRectPaint)
 
+
         val rectW = cropRect.width() / 3f
         val rectH = cropRect.height() / 3f
         for (i in 0 until 3) {
-
             canvas.drawLine(
                 cropRect.left + i * rectW, cropRect.top.toFloat(),
                 cropRect.left + i * rectW, cropRect.bottom.toFloat(),
@@ -614,61 +587,62 @@ class CropView : FrameLayout {
                 cropRect.right.toFloat(), cropRect.top + i * rectH,
                 this.cropRectLinePaint
             )
-
         }
 
+
         val offset = this.calculateCornerSize()
+		val handleDistance = this.cropRectCornerPaint.strokeWidth + resources.displayMetrics.density / 1.5f
 
         // Top handle
         canvas.drawLine(
-            cropRect.left + cropRect.width() / 2f - offset.width / 1.5f,
-            cropRect.top + this.cropRectCornerPaint.strokeWidth,
-            cropRect.left + cropRect.width() / 2f + offset.width / 1.5f,
-            cropRect.top + this.cropRectCornerPaint.strokeWidth,
+				cropRect.left + cropRect.width() / 2f - offset.width / 2f,
+				cropRect.top + handleDistance,
+				cropRect.left + cropRect.width() / 2f + offset.width / 2f,
+				cropRect.top + handleDistance,
             this.cropRectCornerPaint
         )
 
         // Left handle
         canvas.drawLine(
-            cropRect.left + this.cropRectCornerPaint.strokeWidth,
-            cropRect.top + cropRect.height() / 2f - offset.height / 1.5f,
-            cropRect.left + this.cropRectCornerPaint.strokeWidth,
-            cropRect.top + cropRect.height() / 2f + offset.height / 1.5f,
+				cropRect.left + handleDistance,
+				cropRect.top + cropRect.height() / 2f - offset.height / 2f,
+				cropRect.left + handleDistance,
+				cropRect.top + cropRect.height() / 2f + offset.height / 2f,
             this.cropRectCornerPaint
         )
 
         // Right handle
         canvas.drawLine(
-            cropRect.right - this.cropRectCornerPaint.strokeWidth,
-            cropRect.top + cropRect.height() / 2f - offset.height / 1.5f,
-            cropRect.right - this.cropRectCornerPaint.strokeWidth,
-            cropRect.top + cropRect.height() / 2f + offset.height / 1.5f,
+				cropRect.right - handleDistance,
+				cropRect.top + cropRect.height() / 2f - offset.height / 2f,
+				cropRect.right - handleDistance,
+				cropRect.top + cropRect.height() / 2f + offset.height / 2f,
             this.cropRectCornerPaint
         )
 
         // Bottom handle
         canvas.drawLine(
-            cropRect.left + cropRect.width() / 2f - offset.width / 1.5f,
-            cropRect.bottom - this.cropRectCornerPaint.strokeWidth,
-            cropRect.left + cropRect.width() / 2f + offset.width / 1.5f,
-            cropRect.bottom - this.cropRectCornerPaint.strokeWidth,
+				cropRect.left + cropRect.width() / 2f - offset.width / 2f,
+				cropRect.bottom - handleDistance,
+				cropRect.left + cropRect.width() / 2f + offset.width / 2f,
+				cropRect.bottom - handleDistance,
             this.cropRectCornerPaint
         )
 
         // Top-left corner
         canvas.drawLines(
             floatArrayOf(
-                cropRect.left.toFloat() + this.cropRectCornerPaint.strokeWidth,
-                cropRect.top + offset.height + this.cropRectCornerPaint.strokeWidth,
+					cropRect.left.toFloat() + handleDistance,
+					cropRect.top + offset.height / 1.5f + handleDistance,
 
-                cropRect.left.toFloat() + this.cropRectCornerPaint.strokeWidth,
-                cropRect.top.toFloat() + this.cropRectCornerPaint.strokeWidth / 2f,
+					cropRect.left.toFloat() + handleDistance,
+					cropRect.top.toFloat() + handleDistance - cropRectCornerPaint.strokeWidth / 2f,
 
-                cropRect.left + offset.width + this.cropRectCornerPaint.strokeWidth,
-                cropRect.top.toFloat() + this.cropRectCornerPaint.strokeWidth,
+					cropRect.left + offset.width / 1.5f + handleDistance,
+					cropRect.top.toFloat() + handleDistance,
 
-                cropRect.left.toFloat() + this.cropRectCornerPaint.strokeWidth,
-                cropRect.top.toFloat() + this.cropRectCornerPaint.strokeWidth
+					cropRect.left.toFloat() + handleDistance,
+					cropRect.top.toFloat() + handleDistance
             ),
             this.cropRectCornerPaint
         )
@@ -676,17 +650,17 @@ class CropView : FrameLayout {
         // Bottom-left corner
         canvas.drawLines(
             floatArrayOf(
-                cropRect.left.toFloat() + this.cropRectCornerPaint.strokeWidth,
-                cropRect.bottom - offset.height - this.cropRectCornerPaint.strokeWidth,
+					cropRect.left.toFloat() + handleDistance,
+					cropRect.bottom - offset.height / 1.5f - handleDistance,
 
-                cropRect.left.toFloat() + this.cropRectCornerPaint.strokeWidth,
-                cropRect.bottom.toFloat() - this.cropRectCornerPaint.strokeWidth / 2f,
+					cropRect.left.toFloat() + handleDistance,
+					cropRect.bottom.toFloat() - handleDistance + cropRectCornerPaint.strokeWidth / 2f,
 
-                cropRect.left + offset.width + this.cropRectCornerPaint.strokeWidth,
-                cropRect.bottom.toFloat() - this.cropRectCornerPaint.strokeWidth,
+					cropRect.left + offset.width / 1.5f + handleDistance,
+					cropRect.bottom.toFloat() - handleDistance,
 
-                cropRect.left.toFloat() + this.cropRectCornerPaint.strokeWidth,
-                cropRect.bottom.toFloat() - this.cropRectCornerPaint.strokeWidth
+					cropRect.left.toFloat() + handleDistance,
+					cropRect.bottom.toFloat() - handleDistance
             ),
             this.cropRectCornerPaint
         )
@@ -694,35 +668,35 @@ class CropView : FrameLayout {
         // Top-right corner
         canvas.drawLines(
             floatArrayOf(
-                cropRect.right.toFloat() - this.cropRectCornerPaint.strokeWidth,
-                cropRect.top + offset.height + this.cropRectCornerPaint.strokeWidth,
+					cropRect.right.toFloat() - handleDistance,
+					cropRect.top + offset.height / 1.5f + handleDistance,
 
-                cropRect.right.toFloat() - this.cropRectCornerPaint.strokeWidth,
-                cropRect.top.toFloat() + this.cropRectCornerPaint.strokeWidth / 2f,
+					cropRect.right.toFloat() - handleDistance,
+					cropRect.top.toFloat() + handleDistance - cropRectCornerPaint.strokeWidth / 2f,
 
-                cropRect.right - offset.width - this.cropRectCornerPaint.strokeWidth,
-                cropRect.top.toFloat() + this.cropRectCornerPaint.strokeWidth,
+					cropRect.right - offset.width / 1.5f - handleDistance,
+					cropRect.top.toFloat() + handleDistance,
 
-                cropRect.right.toFloat() - this.cropRectCornerPaint.strokeWidth,
-                cropRect.top.toFloat() + this.cropRectCornerPaint.strokeWidth
+					cropRect.right.toFloat() - handleDistance,
+					cropRect.top.toFloat() + handleDistance
             ),
             this.cropRectCornerPaint
         )
 
-        // Bottom-left corner
+		// Bottom-right corner
         canvas.drawLines(
             floatArrayOf(
-                cropRect.right.toFloat() - this.cropRectCornerPaint.strokeWidth,
-                cropRect.bottom - offset.height - this.cropRectCornerPaint.strokeWidth,
+					cropRect.right.toFloat() - handleDistance,
+					cropRect.bottom - offset.height / 1.5f - handleDistance,
 
-                cropRect.right.toFloat() - this.cropRectCornerPaint.strokeWidth,
-                cropRect.bottom.toFloat() - this.cropRectCornerPaint.strokeWidth / 2f,
+					cropRect.right.toFloat() - handleDistance,
+					cropRect.bottom.toFloat() - handleDistance + cropRectCornerPaint.strokeWidth / 2f,
 
-                cropRect.right - offset.width - this.cropRectCornerPaint.strokeWidth,
-                cropRect.bottom.toFloat() - this.cropRectCornerPaint.strokeWidth,
+					cropRect.right - offset.width / 1.5f - handleDistance,
+					cropRect.bottom.toFloat() - handleDistance,
 
-                cropRect.right.toFloat() - this.cropRectCornerPaint.strokeWidth,
-                cropRect.bottom.toFloat() - this.cropRectCornerPaint.strokeWidth
+					cropRect.right.toFloat() - handleDistance,
+					cropRect.bottom.toFloat() - handleDistance
             ),
             this.cropRectCornerPaint
         )
@@ -817,7 +791,6 @@ class CropView : FrameLayout {
         )
     }
 
-
     override fun onDraw(originCanvas: Canvas?) {
         super.onDraw(originCanvas)
 
@@ -832,18 +805,24 @@ class CropView : FrameLayout {
 
         originCanvas?.let { canvas ->
             canvas.save()
-            canvas.translate(canvasZoomPosition.x, canvasZoomPosition.y)
-            canvas.scale(canvasZoomX, canvasZoomY)
 
-            canvas.drawBitmap(image, imageMatrix, null)
+			// Translate to the position
+			canvas.translate(cropRect.exactCenterX(), cropRect.exactCenterY())
+			canvas.scale(scaleFactor, scaleFactor)
+			canvas.translate(-cropRect.exactCenterX(), -cropRect.exactCenterY())
 
-            /*canvas.save()
+			//canvas.drawBitmap(image, imageMatrix, null)
+			//canvas.drawBitmap(image, null, imageRect, null)
+			canvas.drawBitmap(scaledImage, imageRect.left, imageRect.top, null)
+
+			canvas.save()
             canvas.clipRect(cropRect, Region.Op.DIFFERENCE)
             canvas.drawRect(Rect(0, 0, this.width, this.height), cropRectMaskPaint)
-            canvas.restore()*/
-
             canvas.restore()
-            this.drawCropRectangle(canvas)
+
+			this.drawCropRectangle(canvas)
+
+			canvas.restore()
 
         }
     }
