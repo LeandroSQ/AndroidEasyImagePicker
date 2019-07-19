@@ -89,6 +89,7 @@ object EasyImagePicker {
 		private var optionCrop: Boolean = false
 		private var waitingForCrop: Boolean = false
 		internal var optionCropType: CropImageType = CropImageType.FREE_CROPPING
+		internal var optionRotate: Boolean = true
 
 		internal var cropAspectRatioHorizontal: Int = 0
 		internal var cropAspectRatioVertical: Int = 0
@@ -181,6 +182,24 @@ object EasyImagePicker {
 		}
 
 		/***
+		 * Disables the rotation option when cropping
+		 *
+		 * @throws Exception When crop is disabled
+		 *
+		 * Requires the cropping option being true
+		 * @see crop
+		 ***/
+		fun disableRotation(): ImagePickerRequest {
+			if (this.optionCrop) {
+				this.optionRotate = false
+			} else {
+				throw Exception("Rotation only enabled after cropping being set!")
+			}
+
+			return this
+		}
+
+		/***
 		 * Locks the image size when cropping
 		 *
 		 * Also, if cropping is disabled this option enables it
@@ -198,6 +217,8 @@ object EasyImagePicker {
 		/***
 		 * Sets the minimum image size when cropping
 		 *
+		 * @throws Exception When aspect ratio is set and the provided Minimum size doesn't matches
+		 *
 		 * Also, if cropping is disabled this option enables it
 		 * @see crop
 		 ***/
@@ -214,6 +235,8 @@ object EasyImagePicker {
 		/***
 		 * Sets the maximum image size when cropping
 		 *
+		 * @throws Exception When aspect ratio is set and the provided Maximum size doesn't matches
+		 *
 		 * Also, if cropping is disabled this option enables it
 		 * @see crop
 		 ***/
@@ -229,6 +252,8 @@ object EasyImagePicker {
 
 		/***
 		 * Locks the image aspect ratio when cropping
+		 *
+		 * @throws Exception When aspect ratio is set and the provided Minimum or Maximum size doesn't matches
 		 *
 		 * Also, if cropping is disabled this option enables it
 		 * @see crop

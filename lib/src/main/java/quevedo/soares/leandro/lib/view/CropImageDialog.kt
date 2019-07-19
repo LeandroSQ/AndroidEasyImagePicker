@@ -9,6 +9,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import kotlinx.android.synthetic.main.dialog_crop_image.*
+import kotlinx.android.synthetic.main.dialog_crop_image.view.*
 import quevedo.soares.leandro.lib.EasyImagePicker
 import quevedo.soares.leandro.lib.R
 import quevedo.soares.leandro.lib.enumerator.CropImageType
@@ -50,6 +51,11 @@ class CropImageDialog : BaseDialog() {
 			// Sets the image
 			this.image = bitmap
 
+			if (!options.optionRotate) {
+				btnRotate.visibility = View.GONE
+				dividerRotateView.visibility = View.GONE
+			}
+
 			// When fixed size, set the minimum and maximum size to the fixed size
 			if (options.optionCropType == CropImageType.FIXED_SIZE) {
 				this.rectMinWidth = options.cropSizeWidth
@@ -69,6 +75,10 @@ class CropImageDialog : BaseDialog() {
 					this.rectMaxHeight = options.cropMaximumSizeHeight!!
 				}
 			}
+		}
+
+		this.btnRotate.setOnClickListener {
+			this.cropView.scale()
 		}
 
 		this.btnOk.setOnClickListener {

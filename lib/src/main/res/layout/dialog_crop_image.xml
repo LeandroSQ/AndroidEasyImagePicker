@@ -17,8 +17,7 @@
 		android:layout_width="match_parent"
 		android:layout_height="?android:attr/actionBarSize"
 		android:clipChildren="false"
-		android:clipToPadding="false"
-		android:weightSum="3">
+		android:clipToPadding="false">
 
 		<ImageButton
 			android:id="@+id/btnCancel"
@@ -35,6 +34,7 @@
 			android:layout_width="1dp"
 			android:layout_height="match_parent"
 			android:layout_marginTop="10dp"
+			android:id="@+id/dividerRotateView"
 			android:layout_marginBottom="10dp"
 			android:background="#3ccc" />
 
