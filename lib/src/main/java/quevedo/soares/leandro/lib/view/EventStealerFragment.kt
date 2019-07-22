@@ -6,7 +6,7 @@ import android.support.v4.app.Fragment
 
 /**
  * @author Leandro Soares Quevedo
- * @author leandro.soares@operacao.rcadigital.com.br
+ * @author leandrosoaresquevedo@gmail.com
  * @since 2019-07-12
  */
 @SuppressLint("ValidFragment")

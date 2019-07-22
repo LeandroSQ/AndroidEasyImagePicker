@@ -17,10 +17,11 @@ import quevedo.soares.leandro.lib.enumerator.CropImageType
 
 /**
  * @author Leandro Soares Quevedo
- * @author leandro.soares@operacao.rcadigital.com.br
+ * @author leandrosoaresquevedo@gmail.com
  * @since 2019-07-01
  */
 class CropImageDialog : BaseDialog() {
+
 	private lateinit var options: EasyImagePicker.ImagePickerRequest
 	private lateinit var bitmap: Bitmap
 	private var requestedOritentation: Int? = null
@@ -40,11 +41,7 @@ class CropImageDialog : BaseDialog() {
 		}
 	}
 
-	override fun onPreload(inflater: LayoutInflater, parent: ViewGroup?): View {
-		/**/
-
-		return inflater.inflate(R.layout.dialog_crop_image, parent, false)
-	}
+	override fun onPreload(inflater: LayoutInflater, parent: ViewGroup?): View = inflater.inflate(R.layout.dialog_crop_image, parent, false)
 
 	override fun onInitValues() {
 		this.cropView.apply {
@@ -78,11 +75,11 @@ class CropImageDialog : BaseDialog() {
 		}
 
 		this.btnRotate.setOnClickListener {
-			this.cropView.scale()
+
 		}
 
 		this.btnOk.setOnClickListener {
-			this.cropView.scaleToFit()
+
 		}
 
 		this.btnCancel.setOnClickListener {

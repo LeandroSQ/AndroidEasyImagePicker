@@ -2,41 +2,52 @@ package quevedo.soares.leandro.lib.view
 
 import android.content.Context
 import android.graphics.*
+import android.os.Build
 import android.util.AttributeSet
 import android.util.Log
 import android.util.SizeF
 import android.view.MotionEvent
 import android.widget.FrameLayout
 import quevedo.soares.leandro.lib.enumerator.DragType
+import quevedo.soares.leandro.lib.util.distance
+import quevedo.soares.leandro.lib.util.lerp
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.sqrt
 
 /**
  * @author Leandro Soares Quevedo
- * @author leandro.soares@operacao.rcadigital.com.br
+ * @author leandrosoaresquevedo@gmail.com
  * @since 2019-07-12
  */
 class CropView : FrameLayout {
 
+	// ******* Image variables
 	var image: Bitmap? = null
-	var imageRect: RectF = RectF()
-	var imageMatrix: Matrix = Matrix()
-	var scaledImage: Bitmap? = null
+	private var imageRect: RectF = RectF()
+	private var imageMatrix: Matrix = Matrix()
+	private var scaledImage: Bitmap? = null
+	private var imageResized: Boolean = false
 
-	var imageResized: Boolean = false
+	var cropRect: Rect = Rect(256, 256, 512, 512)
 
-	var cropRect: Rect = Rect(256, 256, 256 + 256, 256 + 256)
+	// ******* Paint variables
+	private val cropRectThick: Float by lazy { 1.5f * resources.displayMetrics.density }
+	private val cropRectLineThick: Float by lazy { 1f * resources.displayMetrics.density }
+	private val cropRectCornerLineThick: Float by lazy { 2.5f * resources.displayMetrics.density }
 	private lateinit var cropRectPaint: Paint
 	private lateinit var cropRectLinePaint: Paint
 	private lateinit var cropRectCornerPaint: Paint
 	private lateinit var cropRectMaskPaint: Paint
 
-	var pointerCount: Int = 0
-	var dragging: Boolean = false
-	var activePointerIndex: Int = -1
+	// ******* Touch and dragging variables
+	private var pointerCount: Int = 0
+	private var dragging: Boolean = false
+	private var activePointerIndex: Int = -1
+	private var dragType: DragType? = null
+	private lateinit var lastPosition: PointF
 
+	// ******* Sizing variables
 	var rectMinWidth = 128
 	var rectMinHeight = 128
 	var rectMaxWidth = 0
@@ -44,9 +55,7 @@ class CropView : FrameLayout {
 	private val hasMinimumSet: Boolean by lazy { rectMinWidth != 0 && rectMinHeight != 0 }
 	private val hasMaximumSet: Boolean by lazy { rectMaxWidth != 0 && rectMaxHeight != 0 }
 
-	var dragType: DragType? = null
-	lateinit var lastPosition: PointF
-
+	// ******* Zooming variables
 	private var scalePoint = PointF(0f, 0f)
 	private var animatedScalePoint = scalePoint
 	private var scaleFactor = 1f
@@ -105,28 +114,18 @@ class CropView : FrameLayout {
 		this.cropRectPaint = Paint()
 		this.cropRectPaint.color = Color.WHITE
 		this.cropRectPaint.style = Paint.Style.STROKE
-		this.cropRectPaint.strokeWidth = 1.5f * resources.displayMetrics.density
+		this.cropRectPaint.strokeWidth = cropRectThick
 		this.cropRectPaint.strokeJoin = Paint.Join.MITER
 		this.cropRectPaint.strokeCap = Paint.Cap.BUTT
 		this.cropRectPaint.isAntiAlias = true
 
 		this.cropRectLinePaint = Paint(this.cropRectPaint)
-		this.cropRectLinePaint.strokeWidth = 1f * resources.displayMetrics.density
+		this.cropRectLinePaint.strokeWidth = cropRectLineThick
 		this.cropRectLinePaint.color = Color.argb(255, 200, 200, 200)
 
 		this.cropRectCornerPaint = Paint(this.cropRectLinePaint)
-		this.cropRectCornerPaint.strokeWidth = 2.5f * resources.displayMetrics.density
+		this.cropRectCornerPaint.strokeWidth = cropRectCornerLineThick
 		this.cropRectCornerPaint.style = Paint.Style.FILL
-		/*this.cropRectCornerPaint.colorFilter = ColorMatrixColorFilter(
-			ColorMatrix(
-				floatArrayOf(
-					-1.0f, 0f, 0f, 0f, 255f, // Red
-					0f, -1.0f, 0f, 0f, 255f, // Green
-					0f, 0f, -1.0f, 0f, 255f, // Blue
-					0f, 0f, 0f, 1.0f, 0f // Alpha
-				)
-			)
-		)*/
 		this.cropRectCornerPaint.color = Color.argb(255, 255, 255, 255)
 
 		this.cropRectMaskPaint = Paint()
@@ -134,6 +133,8 @@ class CropView : FrameLayout {
 		this.cropRectMaskPaint.alpha = 150
 		this.cropRectMaskPaint.style = Paint.Style.FILL
 	}
+
+	//<editor-fold defaultstate="Collapsed" desc="Touch handling">
 
 	private fun onTouch(event: MotionEvent) {
 		val pointer = event.getPointerId(0)
@@ -210,10 +211,6 @@ class CropView : FrameLayout {
 
 			}
 		}
-	}
-
-	private fun distance(x1: Float, y1: Float, x2: Int, y2: Int): Float {
-		return sqrt((y2 - y1) * (y2 - y1) + (x2 - x1) * (x2 - x1))
 	}
 
 	private fun onDragStart() {
@@ -419,6 +416,10 @@ class CropView : FrameLayout {
 		}
 	}
 
+	//</editor-fold>
+
+	//<editor-fold defaultstate="Collapsed" desc="Area clipping">
+
 	private fun clipCorners() {
 		// Horizontal clipping
 		if (cropRect.right > imageRect.right) {
@@ -577,6 +578,103 @@ class CropView : FrameLayout {
 		this.scalePoint = imageCenter
 	}
 
+	//</editor-fold>
+
+	private fun calculateCornerSize(): SizeF {
+		val x = 30f * context.resources.displayMetrics.density
+		val w = cropRect.width() / 4f
+		val h = cropRect.height() / 4f
+
+		return SizeF(
+				if (w < x) w else x,
+				if (h < x) h else x
+		)
+	}
+
+	private fun animateValues() {
+		var invokeInvalidate = false
+
+		if (this.scaleFactor != this.animatedScaleFactor) {
+			// Update the animated scale factor
+			this.animatedScaleFactor += lerp(this.animatedScaleFactor, this.scaleFactor, abs(this.scaleFactor - this.animatedScaleFactor) / 5f)
+
+			// Update the paint thickness
+			// Fix for zooming the cropRect
+			cropRectCornerPaint.strokeWidth = cropRectCornerLineThick / animatedScaleFactor
+			cropRectPaint.strokeWidth = cropRectThick / animatedScaleFactor
+			cropRectLinePaint.strokeWidth = cropRectLineThick / animatedScaleFactor
+
+			invokeInvalidate = true
+		}
+
+		if (this.scalePoint.x != this.animatedScalePoint.x || this.scalePoint.y != this.animatedScalePoint.y) {
+			this.animatedScalePoint = lerp(this.animatedScalePoint, this.scalePoint)
+			invokeInvalidate = true
+		}
+
+		if (invokeInvalidate) postDelayed(this::invalidate, 0)
+	}
+
+	override fun onDraw(originCanvas: Canvas?) {
+		super.onDraw(originCanvas)
+
+		// Check for the image availability
+		if (image == null) return
+		else if (!imageResized) {
+			this.scaleToFit()
+
+			this.clipCorners()
+
+			this.imageResized = true
+		}
+
+		originCanvas?.let { canvas ->
+			canvas.save()
+
+			this.scaleCanvas(canvas)
+
+			// No need for wrapping this variable
+			// Whenever this is null, we want the app to crash
+			canvas.drawBitmap(scaledImage!!, imageRect.left, imageRect.top, null)
+
+			canvas.save()
+			this.drawRectangleMask(canvas)
+			canvas.restore()
+
+			this.drawCropRectangle(canvas)
+
+			// TODO: Uncomment this for testing touches
+			/*if (::lastPosition.isInitialized) {
+				val l = 20f * resources.displayMetrics.density
+				canvas.drawOval(
+						lastPosition.x - l, lastPosition.y - l, lastPosition.x + l, lastPosition.y + l, cropRectCornerPaint
+				)
+			}*/
+
+			canvas.restore()
+		}
+
+		this.animateValues()
+	}
+
+	private fun scaleCanvas(canvas: Canvas) {
+		// Translate to the position
+		canvas.translate(animatedScalePoint.x, animatedScalePoint.y)
+		canvas.scale(animatedScaleFactor, animatedScaleFactor)
+		canvas.translate(-animatedScalePoint.x, -animatedScalePoint.y)
+	}
+
+	private fun drawRectangleMask(canvas: Canvas) {
+		// Clip out the crop rect from the mask area
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+			canvas.clipOutRect(cropRect)
+		} else {
+			canvas.clipRect(cropRect, Region.Op.DIFFERENCE)
+		}
+
+		canvas.drawRect(0f, 0f, this.width.toFloat(), this.height.toFloat(), cropRectMaskPaint)
+	}
+
 	private fun drawCropRectangle(canvas: Canvas) {
 		val rectW = cropRect.width() / 3f
 		val rectH = cropRect.height() / 3f
@@ -709,178 +807,6 @@ class CropView : FrameLayout {
 				this.cropRectCornerPaint
 		)
 
-	}
-
-	private fun drawCornersOutline(canvas: Canvas) {
-		val offset = this.calculateCornerSize()
-
-		// Center
-		canvas.drawRect(
-				cropRect.centerX() - offset.width / 2,
-				cropRect.centerY() - offset.height / 2,
-				cropRect.centerX() + offset.width / 2,
-				cropRect.centerY() + offset.height / 2,
-				this.cropRectCornerPaint
-		)
-		// Top
-		canvas.drawRect(
-				cropRect.centerX() - offset.width / 2,
-				cropRect.top - offset.height / 2,
-				cropRect.centerX() + offset.width / 2,
-				cropRect.top + offset.height / 2,
-				this.cropRectCornerPaint
-		)
-		// Bottom
-		canvas.drawRect(
-				cropRect.centerX() - offset.width / 2,
-				cropRect.bottom - offset.height / 2,
-				cropRect.centerX() + offset.width / 2,
-				cropRect.bottom + offset.height / 2,
-				this.cropRectCornerPaint
-		)
-		// Left
-		canvas.drawRect(
-				cropRect.left - offset.width / 2,
-				cropRect.centerY() - offset.height / 2,
-				cropRect.left + offset.width / 2,
-				cropRect.centerY() + offset.height / 2,
-				this.cropRectCornerPaint
-		)
-		// Left
-		canvas.drawRect(
-				cropRect.right - offset.width / 2,
-				cropRect.centerY() - offset.height / 2,
-				cropRect.right + offset.width / 2,
-				cropRect.centerY() + offset.height / 2,
-				this.cropRectCornerPaint
-		)
-		// Top-left corner
-		canvas.drawRect(
-				cropRect.left - offset.width / 2,
-				cropRect.top - offset.height / 2,
-				cropRect.left + offset.width / 2,
-				cropRect.top + offset.height / 2,
-				this.cropRectCornerPaint
-		)
-		// Top-right corner
-		canvas.drawRect(
-				cropRect.right - offset.width / 2,
-				cropRect.top - offset.height / 2,
-				cropRect.right + offset.width / 2,
-				cropRect.top + offset.height / 2,
-				this.cropRectCornerPaint
-		)
-		// Bottom-left corner
-		canvas.drawRect(
-				cropRect.left - offset.width / 2,
-				cropRect.bottom - offset.height / 2,
-				cropRect.left + offset.width / 2,
-				cropRect.bottom + offset.height / 2,
-				this.cropRectCornerPaint
-		)
-		// Bottom-right corner
-		canvas.drawRect(
-				cropRect.right - offset.width / 2,
-				cropRect.bottom - offset.height / 2,
-				cropRect.right + offset.width / 2,
-				cropRect.bottom + offset.height / 2,
-				this.cropRectCornerPaint
-		)
-	}
-
-	private fun calculateCornerSize(): SizeF {
-		val x = 30f * context.resources.displayMetrics.density
-		val w = cropRect.width() / 4f
-		val h = cropRect.height() / 4f
-
-		return SizeF(
-				if (w < x) w else x,
-				if (h < x) h else x
-		)
-	}
-
-	fun scale() {
-		this.scaleFactor = when (this.scaleFactor) {
-			1f -> 2f
-			2f -> 3f
-			else -> 1f
-		}
-
-		invalidate()
-	}
-
-	private fun lerp(current: Float, target: Float, step: Float): Float {
-		val diff = target - current
-
-		return when {
-			diff >= step -> step
-			-step > diff -> -step
-			else -> diff
-		}
-	}
-
-	private fun lerp(current: PointF, target: PointF): PointF {
-		return PointF(
-				current.x + lerp(current.x, target.x, abs(target.x - current.x) / 10f),
-				current.y + lerp(current.y, target.y, abs(target.y - current.y) / 10f)
-		)
-	}
-
-	override fun onDraw(originCanvas: Canvas?) {
-		super.onDraw(originCanvas)
-
-		var invokeInvalidate = false
-
-		if (image == null) return
-		else if (!imageResized) {
-			this.scaleToFit()
-
-			this.clipCorners()
-
-			this.imageResized = true
-		}
-
-		originCanvas?.let { canvas ->
-			canvas.save()
-
-			// Translate to the position
-			canvas.translate(animatedScalePoint.x, animatedScalePoint.y)
-			canvas.scale(animatedScaleFactor, animatedScaleFactor)
-			canvas.translate(-animatedScalePoint.x, -animatedScalePoint.y)
-
-			//canvas.drawBitmap(image, imageMatrix, null)
-			//canvas.drawBitmap(image, null, imageRect, null)
-			canvas.drawBitmap(scaledImage, imageRect.left, imageRect.top, null)
-
-			canvas.save()
-			canvas.clipRect(cropRect, Region.Op.DIFFERENCE)
-			canvas.drawRect(Rect(0, 0, this.width, this.height), cropRectMaskPaint)
-			canvas.restore()
-
-			this.drawCropRectangle(canvas)
-
-			/*if (::lastPosition.isInitialized) {
-				val l = 20f * resources.displayMetrics.density
-				canvas.drawOval(
-						lastPosition.x - l, lastPosition.y - l, lastPosition.x + l, lastPosition.y + l, cropRectCornerPaint
-				)
-			}*/
-
-			canvas.restore()
-
-		}
-
-		if (this.scaleFactor != this.animatedScaleFactor) {
-			this.animatedScaleFactor += this.lerp(this.animatedScaleFactor, this.scaleFactor, abs(this.scaleFactor - this.animatedScaleFactor) / 5f)
-			invokeInvalidate = true
-		}
-
-		if (this.scalePoint.x != this.animatedScalePoint.x || this.scalePoint.y != this.animatedScalePoint.y) {
-			this.animatedScalePoint = this.lerp(this.animatedScalePoint, this.scalePoint)
-			invokeInvalidate = true
-		}
-
-		if (invokeInvalidate) postDelayed(this::invalidate, 0)
 	}
 
 }
