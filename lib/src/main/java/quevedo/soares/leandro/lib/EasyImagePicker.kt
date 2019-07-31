@@ -29,6 +29,7 @@ import java.util.*
 
 /**
  * @author Leandro Soares Quevedo
+ * @author leandrosoaresquevedo@gmail.com
  * @since 2019-06-18
  */
 object EasyImagePicker {

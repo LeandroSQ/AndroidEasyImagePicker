@@ -2,7 +2,7 @@ package quevedo.soares.leandro.lib.util
 
 /**
  * @author Leandro Soares Quevedo
- * @author leandro.soares@operacao.rcadigital.com.br
+ * @author leandrosoaresquevedo@gmail.com
  * @since 2019-07-22
  */
 internal object Log {
