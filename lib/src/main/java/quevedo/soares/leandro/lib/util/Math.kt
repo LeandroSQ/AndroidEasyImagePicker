@@ -9,7 +9,9 @@ import kotlin.math.sqrt
  * @author leandrosoaresquevedo@gmail.com
  * @since 2019-07-22
  */
-fun lerp(current: Float, target: Float, step: Float): Float {
+fun lerp(current: Float, target: Float, initialStep: Float): Float {
+	val step = if (initialStep < 0.1f) 0.1f else initialStep
+
 	val diff = target - current
 
 	return when {
@@ -19,10 +21,10 @@ fun lerp(current: Float, target: Float, step: Float): Float {
 	}
 }
 
-fun lerp(current: PointF, target: PointF): PointF {
+fun lerp(current: PointF, target: PointF, step: Float = 10f): PointF {
 	return PointF(
-			current.x + lerp(current.x, target.x, abs(target.x - current.x) / 10f),
-			current.y + lerp(current.y, target.y, abs(target.y - current.y) / 10f)
+		current.x + lerp(current.x, target.x, abs(target.x - current.x) / step),
+		current.y + lerp(current.y, target.y, abs(target.y - current.y) / step)
 	)
 }
 
