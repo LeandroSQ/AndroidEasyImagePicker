@@ -7,8 +7,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.support.v4.app.DialogFragment
 import android.support.v4.app.FragmentManager
-import android.util.Log
 import android.view.*
+import quevedo.soares.leandro.lib.util.Log
 
 /**
  * @author Leandro Soares Quevedo
@@ -110,7 +110,7 @@ abstract class BaseDialog : DialogFragment() {
 			ft.add(this, tag)
 			ft.commit()
 		} catch (e: IllegalStateException) {
-			Log.d("EasyImagePicker", "Exception", e)
+			Log.e("Exception", e)
 		}
 
 	}

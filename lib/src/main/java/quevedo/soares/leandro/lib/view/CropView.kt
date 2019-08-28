@@ -4,13 +4,11 @@ import android.content.Context
 import android.graphics.*
 import android.os.Build
 import android.util.AttributeSet
-import android.util.Log
 import android.util.SizeF
 import android.view.MotionEvent
 import android.widget.FrameLayout
 import quevedo.soares.leandro.lib.enumerator.DragType
-import quevedo.soares.leandro.lib.util.distance
-import quevedo.soares.leandro.lib.util.lerp
+import quevedo.soares.leandro.lib.util.*
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -25,11 +23,21 @@ class CropView : FrameLayout {
 	// ******* Image variables
 	var image: Bitmap? = null
 	private var imageRect: RectF = RectF()
-	private var imageMatrix: Matrix = Matrix()
 	private var scaledImage: Bitmap? = null
-	private var imageResized: Boolean = false
+	private var isImageResized: Boolean = false
 
-	var cropRect: Rect = Rect(256, 256, 512, 512)
+	val croppedImage: Bitmap?
+		get() {
+			return if (scaledImage != null) {
+				Bitmap.createBitmap(
+					this.scaledImage!!,
+					cropRect.left - imageRect.left.toInt(),
+					cropRect.top - imageRect.top.toInt(),
+					this.cropRect.width(),
+					this.cropRect.height()
+				)
+			} else null
+		}
 
 	// ******* Paint variables
 	private val cropRectThick: Float by lazy { 1.5f * resources.displayMetrics.density }
@@ -48,18 +56,29 @@ class CropView : FrameLayout {
 	private lateinit var lastPosition: PointF
 
 	// ******* Sizing variables
-	var rectMinWidth = 128
-	var rectMinHeight = 128
-	var rectMaxWidth = 0
-	var rectMaxHeight = 0
-	private val hasMinimumSet: Boolean by lazy { rectMinWidth != 0 && rectMinHeight != 0 }
-	private val hasMaximumSet: Boolean by lazy { rectMaxWidth != 0 && rectMaxHeight != 0 }
+	var cropRect: Rect = Rect(256, 256, 512, 512)
+	var cropSizeInfo: CropSizeInfo = CropSizeInfo(
+		isMaxSet = false,
+		isMinSet = true,
+		minWidth = 128,
+		maxWidth = 0,
+		minHeight = 128,
+		maxHeight = 0
+	)
 
 	// ******* Zooming variables
 	private var scalePoint = PointF(0f, 0f)
 	private var animatedScalePoint = scalePoint
 	private var scaleFactor = 1f
 	private var animatedScaleFactor = 1f
+
+	// ******* Rotating variables
+	private var isRotating = false
+	private var rotatedImage: Bitmap? = null
+	private var isImageRotationDone = false
+	private var currentRotation = 0f
+
+	// TODO: Aspect ratio, just enable the diagonal drag and multiply the adjacent edge to the respective ratio, for instance, when dragging bottom,  set the horizontal to (bottomDrag * horizontalAspectRatio)
 
 	//<editor-fold defaultstate="Collapsed" desc="Constructors">
 
@@ -71,15 +90,24 @@ class CropView : FrameLayout {
 		this.onInitialized()
 	}
 
-	constructor(context: Context, attrs: AttributeSet?, defStyleAttr: Int) : super(context, attrs, defStyleAttr) {
+	constructor(context: Context, attrs: AttributeSet?, defStyleAttr: Int) : super(
+		context,
+		attrs,
+		defStyleAttr
+	) {
 		this.onInitialized()
 	}
 
-	constructor(context: Context, attrs: AttributeSet?, defStyleAttr: Int, defStyleRes: Int) : super(
-			context,
-			attrs,
-			defStyleAttr,
-			defStyleRes
+	constructor(
+		context: Context,
+		attrs: AttributeSet?,
+		defStyleAttr: Int,
+		defStyleRes: Int
+	) : super(
+		context,
+		attrs,
+		defStyleAttr,
+		defStyleRes
 	) {
 		this.onInitialized()
 	}
@@ -130,18 +158,41 @@ class CropView : FrameLayout {
 
 		this.cropRectMaskPaint = Paint()
 		this.cropRectMaskPaint.color = Color.BLACK
-		this.cropRectMaskPaint.alpha = 150
+		this.cropRectMaskPaint.alpha = 170
 		this.cropRectMaskPaint.style = Paint.Style.FILL
 	}
 
 	//<editor-fold defaultstate="Collapsed" desc="Touch handling">
 
+	private fun localizePoint(event: MotionEvent): PointF {
+		val offsetX = when {
+			scaleFactor <= 1 -> 0f
+			scaleFactor <= 2 -> scalePoint.x / scaleFactor
+			scaleFactor <= 3 -> (scalePoint.x * 2) / 3f
+			else -> scalePoint.x / scaleFactor
+		}
+		val offsetY = when {
+			scaleFactor <= 1 -> 0f
+			scaleFactor <= 2 -> scalePoint.y / scaleFactor
+			scaleFactor <= 3 -> (scalePoint.y * 2) / 3f
+			else -> scalePoint.y / scaleFactor
+		}
+
+		return PointF(
+			(event.getX(activePointerIndex)) / scaleFactor + offsetX,
+			(event.getY(activePointerIndex)) / scaleFactor + offsetY
+		)
+	}
+
 	private fun onTouch(event: MotionEvent) {
+		// Ignore all touch events when rotating the canvas
+		if (this.isRotating) return
+
 		val pointer = event.getPointerId(0)
 
 		when (event.action.and(MotionEvent.ACTION_MASK)) {
 			MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_DOWN -> {
-				Log.d("EasyImagePicker", "New action down -> $pointerCount pointers active")
+				Log.d("New action down -> $pointerCount pointers active")
 				pointerCount++
 
 				if (!dragging) {
@@ -156,10 +207,12 @@ class CropView : FrameLayout {
 				}
 			}
 			MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP -> {
-				Log.d("EasyImagePicker", "New action up -> $pointerCount pointers active")
+				Log.d("New action up -> $pointerCount pointers active")
 				pointerCount--
 
 				if (activePointerIndex == pointer) {
+					this.lastPosition = localizePoint(event)
+
 					// Resets the dragging indicators
 					dragging = false
 					activePointerIndex = -1
@@ -174,28 +227,13 @@ class CropView : FrameLayout {
 				}
 			}
 			MotionEvent.ACTION_MOVE -> {
-				Log.d("EasyImagePicker", "Action move from pointer $pointer")
+				Log.d("Action move from pointer $pointer")
 
 				if (activePointerIndex == pointer) {
 					dragging = true
 				} else return
 
-				val offsetX = when {
-					scaleFactor <= 1 -> 0f
-					scaleFactor <= 2 -> scalePoint.x / scaleFactor
-					scaleFactor <= 3 -> (scalePoint.x * 2) / 3f
-					else -> scalePoint.x / scaleFactor
-				}
-				val offsetY = when {
-					scaleFactor <= 1 -> 0f
-					scaleFactor <= 2 -> scalePoint.y / scaleFactor
-					scaleFactor <= 3 -> (scalePoint.y * 2) / 3f
-					else -> scalePoint.y / scaleFactor
-				}
-				val position = PointF(
-						(event.getX(activePointerIndex)) / scaleFactor + offsetX,
-						(event.getY(activePointerIndex)) / scaleFactor + offsetY
-				)
+				val position = localizePoint(event)
 
 				if (this.dragType == null) {
 					onDragStart()
@@ -214,13 +252,13 @@ class CropView : FrameLayout {
 	}
 
 	private fun onDragStart() {
-		Log.d("EasyImagePicker", "onDragStart")
+		Log.d("onDragStart")
 
 		val cornerSize = calculateCornerSize()
-		val threshold = ((cornerSize.width + cornerSize.height) / 2f)
+		val threshold = ((cornerSize.width + cornerSize.height) / 2f) / this.scaleFactor
 
 		// Diagonals
-		if (distance(this.lastPosition.x, this.lastPosition.y, cropRect.left, cropRect.top) <= threshold) {
+		if (distance(lastPosition.x, lastPosition.y, cropRect.left, cropRect.top) <= threshold) {
 			// Top left box
 			this.dragType = DragType.TopLeft
 		} else if (distance(lastPosition.x, lastPosition.y, cropRect.left, cropRect.bottom) <= threshold) {
@@ -254,7 +292,7 @@ class CropView : FrameLayout {
 		}
 
 		// When a fixed size is provided, ignore any corners and only allow dragging
-		if (this.dragType != null && this.hasMinimumSet && this.hasMaximumSet && this.rectMinHeight == this.rectMaxHeight && this.rectMinWidth == this.rectMaxWidth) {
+		if (this.dragType != null && cropSizeInfo.isMinSet && cropSizeInfo.isMaxSet && cropSizeInfo.minHeight == cropSizeInfo.maxHeight && cropSizeInfo.minWidth == cropSizeInfo.maxWidth) {
 			// Center
 			this.dragType = DragType.Center
 		}
@@ -264,7 +302,7 @@ class CropView : FrameLayout {
 	private fun onDragUpdate(position: PointF) {
 		when (this.dragType!!) {
 			DragType.Center -> {
-				Log.d("EasyImagePicker", "onDragUpdate - Top")
+				Log.d("onDragUpdate - Top")
 
 				val diff = PointF(position.x - lastPosition.x, position.y - lastPosition.y)
 				this.cropRect.top += diff.y.toInt()
@@ -273,127 +311,127 @@ class CropView : FrameLayout {
 				this.cropRect.right += diff.x.toInt()
 			}
 			DragType.Top -> {
-				Log.d("EasyImagePicker", "onDragUpdate - Top")
+				Log.d("onDragUpdate - Top")
 				// Sets the crop rect top to follow the touch position (And clamps it to the image top)
 				this.cropRect.top = max(this.imageRect.top, position.y).toInt()
 
 				// Clipping
-				if (hasMinimumSet && cropRect.height() < rectMinHeight) {
-					this.cropRect.top = cropRect.bottom - rectMinHeight
-				} else if (hasMaximumSet && cropRect.height() > rectMaxHeight) {
-					this.cropRect.top = cropRect.bottom - rectMaxHeight
+				if (cropSizeInfo.isMinSet && cropRect.height() < cropSizeInfo.minHeight) {
+					this.cropRect.top = cropRect.bottom - cropSizeInfo.minHeight
+				} else if (cropSizeInfo.isMaxSet && cropRect.height() > cropSizeInfo.maxHeight) {
+					this.cropRect.top = cropRect.bottom - cropSizeInfo.maxHeight
 				}
 			}
 			DragType.Bottom -> {
-				Log.d("EasyImagePicker", "onDragUpdate - Bottom")
+				Log.d("onDragUpdate - Bottom")
 				// Sets the crop rect bottom to follow the touch position (And clamps it to the image bottom)
 				this.cropRect.bottom = min(this.imageRect.bottom, position.y).toInt()
 
 				// Clipping
-				if (hasMinimumSet && cropRect.height() < rectMinHeight) {
-					this.cropRect.bottom = cropRect.top + rectMinHeight
-				} else if (hasMaximumSet && cropRect.height() > rectMaxHeight) {
-					this.cropRect.bottom = cropRect.top + rectMaxHeight
+				if (cropSizeInfo.isMinSet && cropRect.height() < cropSizeInfo.minHeight) {
+					this.cropRect.bottom = cropRect.top + cropSizeInfo.minHeight
+				} else if (cropSizeInfo.isMaxSet && cropRect.height() > cropSizeInfo.maxHeight) {
+					this.cropRect.bottom = cropRect.top + cropSizeInfo.maxHeight
 				}
 			}
 			DragType.Left -> {
-				Log.d("EasyImagePicker", "onDragUpdate - Left")
+				Log.d("onDragUpdate - Left")
 				// Sets the crop rect left to follow the touch position (And clamps it to the image left)
 				this.cropRect.left = max(this.imageRect.left, position.x).toInt()
 
 				// Clipping
-				if (hasMinimumSet && cropRect.width() < rectMinWidth) {
-					this.cropRect.left = cropRect.right - rectMinWidth
-				} else if (hasMaximumSet && cropRect.width() > rectMaxWidth) {
-					this.cropRect.left = cropRect.right - rectMaxWidth
+				if (cropSizeInfo.isMinSet && cropRect.width() < cropSizeInfo.minWidth) {
+					this.cropRect.left = cropRect.right - cropSizeInfo.minWidth
+				} else if (cropSizeInfo.isMaxSet && cropRect.width() > cropSizeInfo.maxWidth) {
+					this.cropRect.left = cropRect.right - cropSizeInfo.maxWidth
 				}
 			}
 			DragType.Right -> {
-				Log.d("EasyImagePicker", "onDragUpdate - Right")
+				Log.d("onDragUpdate - Right")
 				// Sets the crop rect right to follow the touch position (And clamps it to the image right)
 				this.cropRect.right = min(this.imageRect.right, position.x).toInt()
 
 				// Clipping
-				if (hasMinimumSet && cropRect.width() < rectMinWidth) {
-					this.cropRect.right = cropRect.left + rectMinWidth
-				} else if (hasMaximumSet && cropRect.width() > rectMaxWidth) {
-					this.cropRect.right = cropRect.left + rectMaxWidth
+				if (cropSizeInfo.isMinSet && cropRect.width() < cropSizeInfo.minWidth) {
+					this.cropRect.right = cropRect.left + cropSizeInfo.minWidth
+				} else if (cropSizeInfo.isMaxSet && cropRect.width() > cropSizeInfo.maxWidth) {
+					this.cropRect.right = cropRect.left + cropSizeInfo.maxWidth
 				}
 			}
 			DragType.TopLeft -> {
-				Log.d("EasyImagePicker", "onDragUpdate - TopLeft")
+				Log.d("onDragUpdate - TopLeft")
 				// Sets the crop rect top to follow the touch position (And clamps it to the image top)
 				this.cropRect.top = max(this.imageRect.top, position.y).toInt()
 				// Sets the crop rect left to follow the touch position (And clamps it to the image left)
 				this.cropRect.left = max(this.imageRect.left, position.x).toInt()
 
 				// Clipping
-				if (hasMinimumSet && cropRect.width() < rectMinWidth) {
-					this.cropRect.left = cropRect.right - rectMinWidth
-				} else if (hasMaximumSet && cropRect.width() > rectMaxWidth) {
-					this.cropRect.left = cropRect.right - rectMaxWidth
+				if (cropSizeInfo.isMinSet && cropRect.width() < cropSizeInfo.minWidth) {
+					this.cropRect.left = cropRect.right - cropSizeInfo.minWidth
+				} else if (cropSizeInfo.isMaxSet && cropRect.width() > cropSizeInfo.maxWidth) {
+					this.cropRect.left = cropRect.right - cropSizeInfo.maxWidth
 				}
-				if (hasMinimumSet && cropRect.height() < rectMinHeight) {
-					this.cropRect.top = cropRect.bottom - rectMinHeight
-				} else if (hasMaximumSet && cropRect.height() > rectMaxHeight) {
-					this.cropRect.top = cropRect.bottom - rectMaxHeight
+				if (cropSizeInfo.isMinSet && cropRect.height() < cropSizeInfo.minHeight) {
+					this.cropRect.top = cropRect.bottom - cropSizeInfo.minHeight
+				} else if (cropSizeInfo.isMaxSet && cropRect.height() > cropSizeInfo.maxHeight) {
+					this.cropRect.top = cropRect.bottom - cropSizeInfo.maxHeight
 				}
 			}
 			DragType.TopRight -> {
-				Log.d("EasyImagePicker", "onDragUpdate - TopRight")
+				Log.d("onDragUpdate - TopRight")
 				// Sets the crop rect top to follow the touch position (And clamps it to the image top)
 				this.cropRect.top = max(this.imageRect.top, position.y).toInt()
 				// Sets the crop rect right to follow the touch position (And clamps it to the image right)
 				this.cropRect.right = min(this.imageRect.right, position.x).toInt()
 
 				// Clipping
-				if (hasMinimumSet && cropRect.width() <= rectMinWidth) {
-					this.cropRect.right = cropRect.left + rectMinWidth
-				} else if (hasMaximumSet && cropRect.width() > rectMaxWidth) {
-					this.cropRect.right = cropRect.left + rectMaxWidth
+				if (cropSizeInfo.isMinSet && cropRect.width() <= cropSizeInfo.minWidth) {
+					this.cropRect.right = cropRect.left + cropSizeInfo.minWidth
+				} else if (cropSizeInfo.isMaxSet && cropRect.width() > cropSizeInfo.maxWidth) {
+					this.cropRect.right = cropRect.left + cropSizeInfo.maxWidth
 				}
-				if (hasMinimumSet && cropRect.height() <= rectMinHeight) {
-					this.cropRect.top = cropRect.bottom - rectMinHeight
-				} else if (hasMaximumSet && cropRect.height() > rectMaxHeight) {
-					this.cropRect.top = cropRect.bottom - rectMaxHeight
+				if (cropSizeInfo.isMinSet && cropRect.height() <= cropSizeInfo.minHeight) {
+					this.cropRect.top = cropRect.bottom - cropSizeInfo.minHeight
+				} else if (cropSizeInfo.isMaxSet && cropRect.height() > cropSizeInfo.maxHeight) {
+					this.cropRect.top = cropRect.bottom - cropSizeInfo.maxHeight
 				}
 			}
 			DragType.BottomLeft -> {
-				Log.d("EasyImagePicker", "onDragUpdate - BottomLeft")
+				Log.d("onDragUpdate - BottomLeft")
 				// Sets the crop rect bottom to follow the touch position (And clamps it to the image bottom)
 				this.cropRect.bottom = min(this.imageRect.bottom, position.y).toInt()
 				// Sets the crop rect left to follow the touch position (And clamps it to the image left)
 				this.cropRect.left = max(this.imageRect.left, position.x).toInt()
 
 				// Clipping
-				if (hasMinimumSet && cropRect.width() <= rectMinWidth) {
-					this.cropRect.left = cropRect.right - rectMinWidth
-				} else if (hasMaximumSet && cropRect.width() > rectMaxWidth) {
-					this.cropRect.right = cropRect.left - rectMaxWidth
+				if (cropSizeInfo.isMinSet && cropRect.width() <= cropSizeInfo.minWidth) {
+					this.cropRect.left = cropRect.right - cropSizeInfo.minWidth
+				} else if (cropSizeInfo.isMaxSet && cropRect.width() > cropSizeInfo.maxWidth) {
+					this.cropRect.right = cropRect.left - cropSizeInfo.maxWidth
 				}
-				if (hasMinimumSet && cropRect.height() <= rectMinHeight) {
-					this.cropRect.bottom = cropRect.top + rectMinHeight
-				} else if (hasMaximumSet && cropRect.height() > rectMaxHeight) {
-					this.cropRect.bottom = cropRect.top - rectMaxHeight
+				if (cropSizeInfo.isMinSet && cropRect.height() <= cropSizeInfo.minHeight) {
+					this.cropRect.bottom = cropRect.top + cropSizeInfo.minHeight
+				} else if (cropSizeInfo.isMaxSet && cropRect.height() > cropSizeInfo.maxHeight) {
+					this.cropRect.bottom = cropRect.top - cropSizeInfo.maxHeight
 				}
 			}
 			DragType.BottomRight -> {
-				Log.d("EasyImagePicker", "onDragUpdate - BottomRight")
+				Log.d("onDragUpdate - BottomRight")
 				// Sets the crop rect bottom to follow the touch position (And clamps it to the image bottom)
 				this.cropRect.bottom = min(this.imageRect.bottom, position.y).toInt()
 				// Sets the crop rect right to follow the touch position (And clamps it to the image right)
 				this.cropRect.right = min(this.imageRect.right, position.x).toInt()
 
 				// Clipping
-				if (hasMinimumSet && cropRect.width() <= rectMinWidth) {
-					this.cropRect.right = cropRect.left + rectMinWidth
-				} else if (hasMaximumSet && cropRect.width() > rectMaxWidth) {
-					this.cropRect.right = cropRect.left + rectMaxWidth
+				if (cropSizeInfo.isMinSet && cropRect.width() <= cropSizeInfo.minWidth) {
+					this.cropRect.right = cropRect.left + cropSizeInfo.minWidth
+				} else if (cropSizeInfo.isMaxSet && cropRect.width() > cropSizeInfo.maxWidth) {
+					this.cropRect.right = cropRect.left + cropSizeInfo.maxWidth
 				}
-				if (hasMinimumSet && cropRect.height() <= rectMinHeight) {
-					this.cropRect.bottom = cropRect.top + rectMinHeight
-				} else if (hasMaximumSet && cropRect.height() > rectMaxHeight) {
-					this.cropRect.bottom = cropRect.top - rectMaxHeight
+				if (cropSizeInfo.isMinSet && cropRect.height() <= cropSizeInfo.minHeight) {
+					this.cropRect.bottom = cropRect.top + cropSizeInfo.minHeight
+				} else if (cropSizeInfo.isMaxSet && cropRect.height() > cropSizeInfo.maxHeight) {
+					this.cropRect.bottom = cropRect.top - cropSizeInfo.maxHeight
 				}
 			}
 		}
@@ -404,9 +442,24 @@ class CropView : FrameLayout {
 	private fun onDragEnd() {
 		// Scale up on the exact center
 		scalePoint = PointF(
-				cropRect.exactCenterX(),
-				cropRect.exactCenterY()
+			cropRect.exactCenterX(),
+			cropRect.exactCenterY()
 		)
+
+		val horizontalSlice = imageRect.width() / 4
+		val verticalSlice = imageRect.height() / 4
+
+		if (scalePoint.x < horizontalSlice) {
+			scalePoint.x = 0f
+		} else if (scalePoint.x > imageRect.right - horizontalSlice) {
+			scalePoint.x = imageRect.right
+		}
+
+		if (scalePoint.y < horizontalSlice) {
+			scalePoint.y = 0f
+		} else if (scalePoint.y > imageRect.bottom - verticalSlice) {
+			scalePoint.y = imageRect.bottom
+		}
 
 		// Automatic scale factor
 		scaleFactor = if (cropRect.width() > cropRect.height()) {
@@ -414,6 +467,7 @@ class CropView : FrameLayout {
 		} else {
 			max(min(0.4f + (1 - cropRect.height() / imageRect.height()) * 3f, 3f), 1f).toInt().toFloat()
 		}
+
 	}
 
 	//</editor-fold>
@@ -452,130 +506,128 @@ class CropView : FrameLayout {
 		}
 	}
 
-	fun scaleToFit() {
-		// Reset the image matrix
-		imageMatrix = Matrix()
-		imageMatrix.reset()
+	//</editor-fold>
 
-		image?.let {
-			// Create the temporary variables
-			var imageFinalX = 0f
-			var imageFinalY = 0f
-			var imageFinalW = 0f
-			var imageFinalH = 0f
-			val imagePadding = 7f * resources.displayMetrics.density
+	//<editor-fold defaultstate="Collapsed" desc="Rotate handling">
 
-			// For the ladscape images
-			if (it.width > it.height) {
-				if (it.width > this.width) {
-					// If the image's width is greather than the view's width, resize it to fit
-					imageFinalW = this.width.toFloat()
-					imageFinalH = (imageFinalW * it.height) / it.width
-					imageFinalX = 0f
-					imageFinalY = (this.height - imageFinalH) / 2f + imageFinalH / 4f
-				} else {
-					// Just center the image horizontally
-					imageFinalX = max(0f, (this.width - it.width) / 2f)
-					imageFinalW = it.width.toFloat()
+	// Steps:
+	// Step 1 - Zoom out
+	// Step 2 - Position at the center of the screen
+	// Step 3 - Start rotation animation
+	// Step 4 - Actually rotate the image
+	// Step 5 - Reset the rotation variables
+	// Step 6 - Continue ( And unblock the touch listener )
+	private fun onImageRotationStart() {
+		Log.d("Image rotation started!")
 
-					if (it.height > this.height) {
-						// If the image's height is greather than the view's height, resize it to fit
-						imageFinalY = 0f
-						imageFinalH = this.width.toFloat()
-						imageFinalW = (imageFinalH * it.width) / it.height
-					} else {
-						// Just center the image vertically
-						imageFinalY = (this.height - it.height) / 2f + (it.height / 2f)
-						imageFinalH = it.height.toFloat()
-					}
-				}
-			} else {
-				if (it.height >= this.height) {
-					// If the image's width is greather than the view's width, resize it to fit
-					imageFinalH = this.height.toFloat()
-					imageFinalW = min((imageFinalH * it.width) / it.height, this.width.toFloat())
-					imageFinalX = max(0f, (this.width - imageFinalW) / 2f)
-					imageFinalY = 0f
-				} else {
-					// Just center the image vertically
-					imageFinalH = it.height.toFloat()
-					imageFinalY =
-							max(0f, (this.height - imageFinalH) / 2f) //(this.height - it.height) / 2f + (it.height / 4f)
+		// Set the rotation running flag and disables the touch
+		this.isRotating = true
 
-					if (it.width > this.width) {
-						// If the image's height is greather than the view's height, resize it to fit
-						imageFinalY = 0f
-						imageFinalW = this.height.toFloat()
-						imageFinalH = (imageFinalW * it.height) / it.width
-					} else {
-						// Just center the image horizontally
-						imageFinalW = it.width.toFloat()
-						imageFinalX = max(0f, (this.width - imageFinalW) / 2f)
-					}
-				}
-			}
+		// Reset rotation variables
+		this.isImageRotationDone = false
+		this.rotatedImage = null
 
-			imageFinalX += imagePadding
-			imageFinalY += imagePadding
-			imageFinalW -= imagePadding * 2
-			imageFinalH -= imagePadding * 2
+		// Resets the zoom and pan
+		scalePoint = PointF(0f, 0f)
+		scaleFactor = 1f
 
-			// Creates a rectangle from the image
-			this.imageRect = RectF(
-					imageFinalX,
-					imageFinalY,
-					imageFinalX + imageFinalW,
-					imageFinalY + imageFinalH
-			)
+		// Starts a thread for rotate the image in background
+		this.rotateImageInBackground()
 
-			// Translate the image
-			imageMatrix.preTranslate(imageRect.left + imagePadding, imageRect.top + imagePadding)
-
-			// Calculate the scale from the original image size
-			val scaleX = imageRect.width() / it.width
-			val scaleY = imageRect.height() / it.height
-			imageMatrix.postScale(scaleX, scaleY)
-
-			this.scaledImage = Bitmap.createScaledBitmap(image!!, imageRect.width().toInt(), imageRect.height().toInt(), false)
-
-			this.centerCropRect()
-		}
-
-		// Post delay a re-paint
-		invalidate()
+		this.invalidate()
 	}
 
-	private fun centerCropRect() {
-		val imageCenter = PointF(
-				imageRect.centerX(),
-				imageRect.centerY()
-		)
+	private fun rotateImageInBackground() {
+		Log.d("Image rotation thread starting...")
 
-		when {
-			hasMaximumSet -> {
-				cropRect.left = (imageCenter.x - rectMaxWidth / 2).toInt()
-				cropRect.right = (cropRect.left + rectMaxWidth)
+		Thread {
+			try {
+				Log.d("Image rotation thread started!")
 
-				cropRect.top = (imageCenter.y - rectMaxHeight / 2).toInt()
-				cropRect.bottom = (cropRect.top + rectMaxHeight)
+				// Rotate the original image
+				val rotateMatrix = Matrix()
+				rotateMatrix.postRotate(90f)
+				this.rotatedImage = Bitmap.createBitmap(
+					this.image!!,
+					0,
+					0,
+					this.image!!.width,
+					this.image!!.height,
+					rotateMatrix,
+					true
+				)
+
+				// Calculate the scale from the original image size
+				this.rotatedImage = Bitmap.createScaledBitmap(
+					rotatedImage!!,
+					rotatedImage!!.width,
+					rotatedImage!!.height,
+					false
+				)
+
+				this.isImageRotationDone = true
+			} catch (e: Exception) {
+				e.printStackTrace()
+				Log.e("Error: ", e)
 			}
-			hasMinimumSet -> {
-				cropRect.left = (imageCenter.x - rectMinWidth / 2).toInt()
-				cropRect.right = (cropRect.left + rectMinWidth)
+		}.start()
+	}
 
-				cropRect.top = (imageCenter.y - rectMinHeight / 2).toInt()
-				cropRect.bottom = (cropRect.top + rectMinHeight)
-			}
-			else -> {
-				cropRect.left = imageRect.left.toInt()
-				cropRect.right = imageRect.right.toInt()
+	private fun onImageRotationUpdate() {
+		Log.d("Image rotation updated!")
 
-				cropRect.top = imageRect.top.toInt()
-				cropRect.bottom = imageRect.bottom.toInt()
+		// Animate the zoom out and the position
+		if (!animateValues()) {
+			if (currentRotation < 90f) {
+				this.currentRotation += lerp(this.currentRotation, 90f, 8f)
+
+				postDelayed(this::invalidate, 0)
+			} else {
+				this.onImageRotationEnd()
 			}
+		} else {
+			postDelayed(this::invalidate, 0)
 		}
+	}
 
-		this.scalePoint = imageCenter
+	private fun onImageRotationEnd() {
+		// Check if the image is ready
+		if (!this.isImageRotationDone) {
+			Log.d("Image rotation ending...")
+			// If not, re-schedule it
+			post(this::onImageRotationEnd)
+		} else {
+			Log.d("Image rotation ended!")
+			// Reset variables
+			isRotating = false
+			currentRotation = 0f
+
+			this.image = this.rotatedImage
+			this.rotatedImage = null
+
+			val imageResizer = ImageResizer(
+				screenDensity = resources.displayMetrics.density,
+				source = this.image!!,
+				canvas = SizeF(width.toFloat(), height.toFloat()),
+				cropSizeInfo = cropSizeInfo
+			)
+
+			val imageSizeInfo = imageResizer.shrinkImageToFit()
+			this.image = imageSizeInfo.originalImage
+			this.scaledImage = imageSizeInfo.scaledImage
+			this.cropRect = imageSizeInfo.cropRect
+			this.imageRect = imageSizeInfo.imageRect
+
+			invalidate()
+		}
+	}
+
+	fun rotate() {
+		this.isRotating = true
+		this.isImageRotationDone = false
+		this.rotatedImage = null
+
+		this.onImageRotationStart()
 	}
 
 	//</editor-fold>
@@ -586,17 +638,21 @@ class CropView : FrameLayout {
 		val h = cropRect.height() / 4f
 
 		return SizeF(
-				if (w < x) w else x,
-				if (h < x) h else x
+			if (w < x) w else x,
+			if (h < x) h else x
 		)
 	}
 
-	private fun animateValues() {
-		var invokeInvalidate = false
+	private fun animateValues(): Boolean {
+		var invalidateNeeded = false
 
 		if (this.scaleFactor != this.animatedScaleFactor) {
 			// Update the animated scale factor
-			this.animatedScaleFactor += lerp(this.animatedScaleFactor, this.scaleFactor, abs(this.scaleFactor - this.animatedScaleFactor) / 5f)
+			this.animatedScaleFactor += lerp(
+				this.animatedScaleFactor,
+				this.scaleFactor,
+				abs(this.scaleFactor - this.animatedScaleFactor) / 5f
+			)
 
 			// Update the paint thickness
 			// Fix for zooming the cropRect
@@ -604,15 +660,15 @@ class CropView : FrameLayout {
 			cropRectPaint.strokeWidth = cropRectThick / animatedScaleFactor
 			cropRectLinePaint.strokeWidth = cropRectLineThick / animatedScaleFactor
 
-			invokeInvalidate = true
+			invalidateNeeded = true
 		}
 
 		if (this.scalePoint.x != this.animatedScalePoint.x || this.scalePoint.y != this.animatedScalePoint.y) {
 			this.animatedScalePoint = lerp(this.animatedScalePoint, this.scalePoint)
-			invokeInvalidate = true
+			invalidateNeeded = true
 		}
 
-		if (invokeInvalidate) postDelayed(this::invalidate, 0)
+		return invalidateNeeded
 	}
 
 	override fun onDraw(originCanvas: Canvas?) {
@@ -620,12 +676,21 @@ class CropView : FrameLayout {
 
 		// Check for the image availability
 		if (image == null) return
-		else if (!imageResized) {
-			this.scaleToFit()
+		else if (!isImageResized) {
+			val imageResizer = ImageResizer(
+				screenDensity = resources.displayMetrics.density,
+				source = this.image!!,
+				canvas = SizeF(width.toFloat(), height.toFloat()),
+				cropSizeInfo = cropSizeInfo
+			)
 
-			this.clipCorners()
+			val imageSizeInfo = imageResizer.shrinkImageToFit()
+			this.image = imageSizeInfo.originalImage
+			this.scaledImage = imageSizeInfo.scaledImage
+			this.cropRect = imageSizeInfo.cropRect
+			this.imageRect = imageSizeInfo.imageRect
 
-			this.imageResized = true
+			this.isImageResized = true
 		}
 
 		originCanvas?.let { canvas ->
@@ -654,10 +719,19 @@ class CropView : FrameLayout {
 			canvas.restore()
 		}
 
-		this.animateValues()
+		if (this.isRotating)
+			this.onImageRotationUpdate()
+		else if (this.animateValues())
+			postDelayed(this::invalidate, 0)
 	}
 
 	private fun scaleCanvas(canvas: Canvas) {
+		if (this.isRotating) {
+			canvas.translate(imageRect.centerX(), imageRect.centerY())
+			canvas.rotate(currentRotation)
+			canvas.translate(-imageRect.centerX(), -imageRect.centerY())
+		}
+
 		// Translate to the position
 		canvas.translate(animatedScalePoint.x, animatedScalePoint.y)
 		canvas.scale(animatedScaleFactor, animatedScaleFactor)
@@ -669,6 +743,8 @@ class CropView : FrameLayout {
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
 			canvas.clipOutRect(cropRect)
 		} else {
+			// No deprecation right here, we are checking for newer versions
+			@Suppress("DEPRECATION")
 			canvas.clipRect(cropRect, Region.Op.DIFFERENCE)
 		}
 
@@ -680,15 +756,15 @@ class CropView : FrameLayout {
 		val rectH = cropRect.height() / 3f
 		for (i in 1 until 3) {
 			canvas.drawLine(
-					cropRect.left + i * rectW, cropRect.top.toFloat(),
-					cropRect.left + i * rectW, cropRect.bottom.toFloat(),
-					this.cropRectLinePaint
+				cropRect.left + i * rectW, cropRect.top.toFloat(),
+				cropRect.left + i * rectW, cropRect.bottom.toFloat(),
+				this.cropRectLinePaint
 			)
 
 			canvas.drawLine(
-					cropRect.left.toFloat(), cropRect.top + i * rectH,
-					cropRect.right.toFloat(), cropRect.top + i * rectH,
-					this.cropRectLinePaint
+				cropRect.left.toFloat(), cropRect.top + i * rectH,
+				cropRect.right.toFloat(), cropRect.top + i * rectH,
+				this.cropRectLinePaint
 			)
 		}
 
@@ -697,114 +773,115 @@ class CropView : FrameLayout {
 
 
 		val offset = this.calculateCornerSize()
-		val handleDistance = this.cropRectCornerPaint.strokeWidth + resources.displayMetrics.density / 1.5f
+		val handleDistance =
+			this.cropRectCornerPaint.strokeWidth + resources.displayMetrics.density / 1.5f
 
 		// Top handle
 		canvas.drawLine(
-				cropRect.left + cropRect.width() / 2f - offset.width / 2f,
-				cropRect.top + handleDistance,
-				cropRect.left + cropRect.width() / 2f + offset.width / 2f,
-				cropRect.top + handleDistance,
-				this.cropRectCornerPaint
+			cropRect.left + cropRect.width() / 2f - offset.width / 2f,
+			cropRect.top + handleDistance,
+			cropRect.left + cropRect.width() / 2f + offset.width / 2f,
+			cropRect.top + handleDistance,
+			this.cropRectCornerPaint
 		)
 
 		// Left handle
 		canvas.drawLine(
-				cropRect.left + handleDistance,
-				cropRect.top + cropRect.height() / 2f - offset.height / 2f,
-				cropRect.left + handleDistance,
-				cropRect.top + cropRect.height() / 2f + offset.height / 2f,
-				this.cropRectCornerPaint
+			cropRect.left + handleDistance,
+			cropRect.top + cropRect.height() / 2f - offset.height / 2f,
+			cropRect.left + handleDistance,
+			cropRect.top + cropRect.height() / 2f + offset.height / 2f,
+			this.cropRectCornerPaint
 		)
 
 		// Right handle
 		canvas.drawLine(
-				cropRect.right - handleDistance,
-				cropRect.top + cropRect.height() / 2f - offset.height / 2f,
-				cropRect.right - handleDistance,
-				cropRect.top + cropRect.height() / 2f + offset.height / 2f,
-				this.cropRectCornerPaint
+			cropRect.right - handleDistance,
+			cropRect.top + cropRect.height() / 2f - offset.height / 2f,
+			cropRect.right - handleDistance,
+			cropRect.top + cropRect.height() / 2f + offset.height / 2f,
+			this.cropRectCornerPaint
 		)
 
 		// Bottom handle
 		canvas.drawLine(
-				cropRect.left + cropRect.width() / 2f - offset.width / 2f,
-				cropRect.bottom - handleDistance,
-				cropRect.left + cropRect.width() / 2f + offset.width / 2f,
-				cropRect.bottom - handleDistance,
-				this.cropRectCornerPaint
+			cropRect.left + cropRect.width() / 2f - offset.width / 2f,
+			cropRect.bottom - handleDistance,
+			cropRect.left + cropRect.width() / 2f + offset.width / 2f,
+			cropRect.bottom - handleDistance,
+			this.cropRectCornerPaint
 		)
 
 		// Top-left corner
 		canvas.drawLines(
-				floatArrayOf(
-						cropRect.left.toFloat() + handleDistance,
-						cropRect.top + offset.height / 1.5f + handleDistance,
+			floatArrayOf(
+				cropRect.left.toFloat() + handleDistance,
+				cropRect.top + offset.height / 1.5f + handleDistance,
 
-						cropRect.left.toFloat() + handleDistance,
-						cropRect.top.toFloat() + handleDistance - cropRectCornerPaint.strokeWidth / 2f,
+				cropRect.left.toFloat() + handleDistance,
+				cropRect.top.toFloat() + handleDistance - cropRectCornerPaint.strokeWidth / 2f,
 
-						cropRect.left + offset.width / 1.5f + handleDistance,
-						cropRect.top.toFloat() + handleDistance,
+				cropRect.left + offset.width / 1.5f + handleDistance,
+				cropRect.top.toFloat() + handleDistance,
 
-						cropRect.left.toFloat() + handleDistance,
-						cropRect.top.toFloat() + handleDistance
-				),
-				this.cropRectCornerPaint
+				cropRect.left.toFloat() + handleDistance,
+				cropRect.top.toFloat() + handleDistance
+			),
+			this.cropRectCornerPaint
 		)
 
 		// Bottom-left corner
 		canvas.drawLines(
-				floatArrayOf(
-						cropRect.left.toFloat() + handleDistance,
-						cropRect.bottom - offset.height / 1.5f - handleDistance,
+			floatArrayOf(
+				cropRect.left.toFloat() + handleDistance,
+				cropRect.bottom - offset.height / 1.5f - handleDistance,
 
-						cropRect.left.toFloat() + handleDistance,
-						cropRect.bottom.toFloat() - handleDistance + cropRectCornerPaint.strokeWidth / 2f,
+				cropRect.left.toFloat() + handleDistance,
+				cropRect.bottom.toFloat() - handleDistance + cropRectCornerPaint.strokeWidth / 2f,
 
-						cropRect.left + offset.width / 1.5f + handleDistance,
-						cropRect.bottom.toFloat() - handleDistance,
+				cropRect.left + offset.width / 1.5f + handleDistance,
+				cropRect.bottom.toFloat() - handleDistance,
 
-						cropRect.left.toFloat() + handleDistance,
-						cropRect.bottom.toFloat() - handleDistance
-				),
-				this.cropRectCornerPaint
+				cropRect.left.toFloat() + handleDistance,
+				cropRect.bottom.toFloat() - handleDistance
+			),
+			this.cropRectCornerPaint
 		)
 
 		// Top-right corner
 		canvas.drawLines(
-				floatArrayOf(
-						cropRect.right.toFloat() - handleDistance,
-						cropRect.top + offset.height / 1.5f + handleDistance,
+			floatArrayOf(
+				cropRect.right.toFloat() - handleDistance,
+				cropRect.top + offset.height / 1.5f + handleDistance,
 
-						cropRect.right.toFloat() - handleDistance,
-						cropRect.top.toFloat() + handleDistance - cropRectCornerPaint.strokeWidth / 2f,
+				cropRect.right.toFloat() - handleDistance,
+				cropRect.top.toFloat() + handleDistance - cropRectCornerPaint.strokeWidth / 2f,
 
-						cropRect.right - offset.width / 1.5f - handleDistance,
-						cropRect.top.toFloat() + handleDistance,
+				cropRect.right - offset.width / 1.5f - handleDistance,
+				cropRect.top.toFloat() + handleDistance,
 
-						cropRect.right.toFloat() - handleDistance,
-						cropRect.top.toFloat() + handleDistance
-				),
-				this.cropRectCornerPaint
+				cropRect.right.toFloat() - handleDistance,
+				cropRect.top.toFloat() + handleDistance
+			),
+			this.cropRectCornerPaint
 		)
 
 		// Bottom-right corner
 		canvas.drawLines(
-				floatArrayOf(
-						cropRect.right.toFloat() - handleDistance,
-						cropRect.bottom - offset.height / 1.5f - handleDistance,
+			floatArrayOf(
+				cropRect.right.toFloat() - handleDistance,
+				cropRect.bottom - offset.height / 1.5f - handleDistance,
 
-						cropRect.right.toFloat() - handleDistance,
-						cropRect.bottom.toFloat() - handleDistance + cropRectCornerPaint.strokeWidth / 2f,
+				cropRect.right.toFloat() - handleDistance,
+				cropRect.bottom.toFloat() - handleDistance + cropRectCornerPaint.strokeWidth / 2f,
 
-						cropRect.right - offset.width / 1.5f - handleDistance,
-						cropRect.bottom.toFloat() - handleDistance,
+				cropRect.right - offset.width / 1.5f - handleDistance,
+				cropRect.bottom.toFloat() - handleDistance,
 
-						cropRect.right.toFloat() - handleDistance,
-						cropRect.bottom.toFloat() - handleDistance
-				),
-				this.cropRectCornerPaint
+				cropRect.right.toFloat() - handleDistance,
+				cropRect.bottom.toFloat() - handleDistance
+			),
+			this.cropRectCornerPaint
 		)
 
 	}

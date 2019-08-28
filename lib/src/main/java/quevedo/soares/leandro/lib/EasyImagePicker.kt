@@ -19,9 +19,9 @@ import android.support.v4.app.Fragment
 import android.support.v4.app.FragmentManager
 import android.support.v4.content.FileProvider
 import android.support.v7.app.AppCompatActivity
-import android.util.Log
 import quevedo.soares.leandro.lib.enumerator.CropImageType
 import quevedo.soares.leandro.lib.enumerator.ImageSource
+import quevedo.soares.leandro.lib.util.Log
 import quevedo.soares.leandro.lib.view.CropImageDialog
 import quevedo.soares.leandro.lib.view.EventStealerFragment
 import java.io.File
@@ -29,6 +29,7 @@ import java.util.*
 
 /**
  * @author Leandro Soares Quevedo
+ * @author leandrosoaresquevedo@gmail.com
  * @since 2019-06-18
  */
 object EasyImagePicker {
@@ -402,22 +403,22 @@ object EasyImagePicker {
 			// Check if the provided minimum width is on the locked ratio
 			if (cropMinimumSizeWidth != null && cropMinimumSizeHeight != null) {
 				if (!sizeMatchesAspectRatio(cropMinimumSizeWidth!!, cropMinimumSizeHeight!!, aspectRatio)) {
-					Log.e("EasyImagePicker", "The provided minimum size does not match the aspect ratio")
+					Log.e("The provided minimum size does not match the aspect ratio")
 
 					throw IllegalArgumentException("The provided minimum size does not match the aspect ratio")
 				} else {
-					Log.d("EasyImagePicker", "The provided minimum size matches the aspect ratio")
+					Log.d("The provided minimum size matches the aspect ratio")
 				}
 			}
 
 			// Check if the provided maximum width is on the locked ratio
 			if (cropMaximumSizeWidth != null && cropMaximumSizeHeight != null) {
 				if (!sizeMatchesAspectRatio(cropMaximumSizeWidth!!, cropMaximumSizeHeight!!, aspectRatio)) {
-					Log.e("EasyImagePicker", "The provided maximum size does not match the aspect ratio")
+					Log.e("The provided maximum size does not match the aspect ratio")
 
 					throw IllegalArgumentException("The provided maximum size does not match the aspect ratio")
 				} else {
-					Log.d("EasyImagePicker", "The provided maximum size matches the aspect ratio")
+					Log.d("The provided maximum size matches the aspect ratio")
 				}
 			}
 		}
@@ -434,25 +435,25 @@ object EasyImagePicker {
 			if (this.requestPermissions()) {
 				when (this.imageSource) {
 					ImageSource.GALLERY -> {
-						Log.d("EasyImagePicker", "Requesting image from gallery...")
+						Log.d("Requesting image from gallery...")
 						val intent = this.createGalleryPickIntent()
 
 						this.eventListenerFragment?.startActivityForResult(intent, GALLERY_PICKER_REQUEST_CODE)
 					}
 					ImageSource.CAMERA -> {
-						Log.d("EasyImagePicker", "Requesting camera image capture...")
+						Log.d("Requesting camera image capture...")
 
 						val intent = this.createCameraCaptureIntent()
 
 						this.eventListenerFragment?.startActivityForResult(intent, CAMERA_CAPTURE_REQUEST_CODE)
 					}
 					ImageSource.ANY -> {
-						Log.d("EasyImagePicker", "Requesting user image source...")
+						Log.d("Requesting user image source...")
 						this.showImagePickerIntent()
 					}
 				}
 			} else {
-				Log.d("EasyImagePicker", "The permissions were denied or not_requested. Waiting them to be granted!")
+				Log.d("The permissions were denied or not_requested. Waiting them to be granted!")
 			}
 		}
 
@@ -512,31 +513,31 @@ object EasyImagePicker {
 			when (requestCode) {
 				INTENT_CHOOSER_REQUEST_CODE -> {
 					if (resultCode == Activity.RESULT_OK) {
-						Log.d("EasyImagePicker", "User has selected the image source!")
+						Log.d("User has selected the image source!")
 
 						this.handleBitmapResponse(data)
 					} else {
-						Log.d("EasyImagePicker", "User has dismissed the intent chooser!")
+						Log.d("User has dismissed the intent chooser!")
 					}
 					return true
 				}
 				GALLERY_PICKER_REQUEST_CODE -> {
 					if (resultCode == Activity.RESULT_OK) {
-						Log.d("EasyImagePicker", "User has selected the image!")
+						Log.d("User has selected the image!")
 
 						this.handleBitmapResponse(data)
 					} else {
-						Log.d("EasyImagePicker", "Gallery picking operation has either been canceled or failed!")
+						Log.d("Gallery picking operation has either been canceled or failed!")
 					}
 					return true
 				}
 				CAMERA_CAPTURE_REQUEST_CODE -> {
 					if (resultCode == Activity.RESULT_OK) {
-						Log.d("EasyImagePicker", "User has captured the image!")
+						Log.d("User has captured the image!")
 
 						this.handleBitmapResponse(data)
 					} else {
-						Log.d("EasyImagePicker", "Camera capturing operation has either been canceled or failed!")
+						Log.d("Camera capturing operation has either been canceled or failed!")
 					}
 					return true
 				}
@@ -551,9 +552,17 @@ object EasyImagePicker {
 				if (this.waitingForCrop && bitmap != null) {
 					// Open the crop dialog
 					if (activity != null) {
-						CropImageDialog.show(activity!!, this, bitmap)
+						CropImageDialog.show(activity!!, this, bitmap, callback = {
+							Log.d("Cropped successfully")
+							this.waitingForCrop = false
+							this.successListener?.invoke(it)
+						})
 					} else if (fragment != null) {
-						CropImageDialog.show(activity!!, this, bitmap)
+						CropImageDialog.show(fragment!!, this, bitmap, callback = {
+							Log.d("Cropped successfully")
+							this.waitingForCrop = false
+							this.successListener?.invoke(it)
+						})
 					}
 				} else {
 					this.successListener?.invoke(bitmap)
