@@ -164,6 +164,26 @@ class CropView : FrameLayout {
 
 	//<editor-fold defaultstate="Collapsed" desc="Touch handling">
 
+	private fun localizePoint(event: MotionEvent): PointF {
+		val offsetX = when {
+			scaleFactor <= 1 -> 0f
+			scaleFactor <= 2 -> scalePoint.x / scaleFactor
+			scaleFactor <= 3 -> (scalePoint.x * 2) / 3f
+			else -> scalePoint.x / scaleFactor
+		}
+		val offsetY = when {
+			scaleFactor <= 1 -> 0f
+			scaleFactor <= 2 -> scalePoint.y / scaleFactor
+			scaleFactor <= 3 -> (scalePoint.y * 2) / 3f
+			else -> scalePoint.y / scaleFactor
+		}
+
+		return PointF(
+			(event.getX(activePointerIndex)) / scaleFactor + offsetX,
+			(event.getY(activePointerIndex)) / scaleFactor + offsetY
+		)
+	}
+
 	private fun onTouch(event: MotionEvent) {
 		// Ignore all touch events when rotating the canvas
 		if (this.isRotating) return
@@ -178,8 +198,7 @@ class CropView : FrameLayout {
 				if (!dragging) {
 					try {
 						activePointerIndex = pointer
-						this.lastPosition =
-							PointF(event.getX(activePointerIndex), event.getY(activePointerIndex))
+						this.lastPosition = PointF(event.getX(activePointerIndex), event.getY(activePointerIndex))
 					} catch (e: IllegalArgumentException) {
 						e.printStackTrace()
 						activePointerIndex = -1
@@ -192,6 +211,8 @@ class CropView : FrameLayout {
 				pointerCount--
 
 				if (activePointerIndex == pointer) {
+					this.lastPosition = localizePoint(event)
+
 					// Resets the dragging indicators
 					dragging = false
 					activePointerIndex = -1
@@ -212,22 +233,7 @@ class CropView : FrameLayout {
 					dragging = true
 				} else return
 
-				val offsetX = when {
-					scaleFactor <= 1 -> 0f
-					scaleFactor <= 2 -> scalePoint.x / scaleFactor
-					scaleFactor <= 3 -> (scalePoint.x * 2) / 3f
-					else -> scalePoint.x / scaleFactor
-				}
-				val offsetY = when {
-					scaleFactor <= 1 -> 0f
-					scaleFactor <= 2 -> scalePoint.y / scaleFactor
-					scaleFactor <= 3 -> (scalePoint.y * 2) / 3f
-					else -> scalePoint.y / scaleFactor
-				}
-				val position = PointF(
-					(event.getX(activePointerIndex)) / scaleFactor + offsetX,
-					(event.getY(activePointerIndex)) / scaleFactor + offsetY
-				)
+				val position = localizePoint(event)
 
 				if (this.dragType == null) {
 					onDragStart()
